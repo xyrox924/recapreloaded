@@ -2,6 +2,8 @@ from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
+from gui.addgamedialog import AddGameDialog
+
 from config import *
 
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
@@ -12,11 +14,9 @@ class MainWindow(QMainWindow):
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
-        self.setBaseSize(1000, 600)
+        self.resize(1000, 600)
 
         self.splitter = QSplitter(Qt.Horizontal) # type: ignore
-        self.splitter.setCollapsible(0, False)  # index 0 = left widget (tree), i don't want it to close
-        self.splitter.setStretchFactor(1, 1)  # content expands
         self.splitter.setStyleSheet("""
             QSplitter::handle {
                 background-color: #000000;
@@ -33,7 +33,7 @@ class MainWindow(QMainWindow):
         self.tree_container = QWidget()
         self.tree_container.setStyleSheet("background-color: #191919;")
         self.tree_container.setMinimumWidth(200)
-        self.tree_container.setMaximumWidth(450)
+        self.tree_container.setMaximumWidth(310)
 
         self.tree_layout = QVBoxLayout(self.tree_container)
         self.tree_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,7 +160,7 @@ class MainWindow(QMainWindow):
                 background-color: #5C6C66;
             }
         """)
-        #self.add_btn.clicked.connect(self.add_btn_on_click)
+        self.add_btn.clicked.connect(self._add_btn_on_clicked)
 
         self.tree_layout.addWidget(self.search_bar)
         self.tree_layout.addWidget(self.tree)
@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
                 color: #658076;
             }
         """)
-        #self.gear_btn.clicked.connect(self.gear_btn_on_click)
+        self.settings_btn.clicked.connect(self._settings_btn_on_clicked)
 
         self.title_settings_row.addWidget(self.title_label)
         self.title_settings_row.addStretch()
@@ -229,13 +229,25 @@ class MainWindow(QMainWindow):
         self.stat_layout.addWidget(self.time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
         
-        self.content_layout.addWidget(self.banner_label)
+        self.content_layout.addWidget(self.banner_label, stretch=2) # i like stretch 2
         self.content_layout.addLayout(self.stat_layout)
         self.content_layout.addStretch(1) # just so there's space at the bottom so everything gets moved to the top
 
         self.splitter.addWidget(self.tree_container)
         self.splitter.addWidget(self.content_container)
+
+        self.splitter.setCollapsible(0, False)  # index 0 = left widget (tree), i don't want it to close
+        self.splitter.setStretchFactor(1, 1)  # content expands
+
         self.setCentralWidget(self.splitter)
+
+    def _settings_btn_on_clicked(self):
+        return
+    
+    def _add_btn_on_clicked(self):
+        add_game_dialog = AddGameDialog()
+        if add_game_dialog.exec():
+            return
 
 class Application(QApplication):
 
