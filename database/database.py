@@ -1,6 +1,7 @@
 import sqlite3
 
 from pathlib import Path
+from datetime import datetime
 
 from database.models import *
 
@@ -9,6 +10,7 @@ class Database:
         self.db_path = db_path
 
         # create db
+        conn = None
         try:
             # i'm just closing and opening the connections for everything i do, maybe this isn't right and i should keep one always open
             conn = sqlite3.connect(self.db_path)
@@ -45,9 +47,12 @@ class Database:
             print("Something went wrong while creating the database")
             raise # just crash everything because idk at this point
         finally:
-            conn.close() # type: ignore
+            if conn:
+                print(f"Database at {self.db_path}")
+                conn.close() # type: ignore
 
     def insert_game(self, game: Game) -> Game:
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -56,7 +61,6 @@ class Database:
                     (game.name, game.developer, game.notes))
             game.id = cur.lastrowid
             
-            # Insert executables
             for exe in game.executables:
                 cur.execute("INSERT INTO executables (game_id, exe_name, full_path) VALUES (?, ?, ?)",
                         (game.id, Path(exe.path).name, exe.path))
@@ -69,9 +73,11 @@ class Database:
             print(f"Error inserting game: {e}")
             raise
         finally:
-            conn.close() # type: ignore
+            if conn:
+                conn.close() # type: ignore
 
     def get_game(self, game_id: int):
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -95,9 +101,11 @@ class Database:
             print(f"Something went wrong while getting a game. ID is {game_id}")
             return None
         finally:
-            conn.close() # type: ignore
+            if conn:
+                conn.close() # type: ignore
 
     def get_game_full(self, game_id: int):
+        conn = None
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -141,4 +149,98 @@ class Database:
             print(f"Something went wrong while getting a game. ID is {game_id}")
             return None
         finally:
-            conn.close() # type: ignore
+            if conn:
+                conn.close() # type: ignore
+
+    def get_all_games(self):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("SELECT id, name FROM games")
+
+            game_row = cur.fetchall()
+            if not game_row:
+                return None
+            
+            return game_row
+
+        except sqlite3.Error:
+            print(f"Something went wrong while getting all games.")
+            return None
+        finally:
+            if conn:
+                conn.close() # type: ignore
+
+    def get_game_playtime(self, game_id) -> int:
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT SUM((julianday(s.end_time) - julianday(s.start_time)) * 86400)
+                FROM sessions s
+                WHERE s.game_id = ?
+            """, (game_id,))
+
+            total_seconds = cur.fetchone()[0] or 0 # maybe or 0 i don't need it idk
+            return int(total_seconds)
+
+        except sqlite3.Error:
+            print(f"Something went wrong while getting all games.")
+            return 0
+        finally:
+            if conn:
+                conn.close() # type: ignore
+
+    def get_game_first_time(self, game_id):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT MIN(s.end_time)
+                FROM sessions s
+                WHERE s.game_id = ?
+                    AND s.end_time IS NOT NULL
+            """, (game_id,))
+
+            first_time = cur.fetchone()[0]
+            if first_time is None:
+                return "never"
+            return datetime.fromisoformat(first_time).strftime("%B %d, %Y")
+
+        except sqlite3.Error:
+            print(f"Something went wrong while getting all games.")
+            return None
+        finally:
+            if conn:
+                conn.close() # type: ignore
+
+    def get_game_last_time(self, game_id):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT MAX(s.end_time)
+                FROM sessions s
+                WHERE s.game_id = ?
+                    AND s.end_time IS NOT NULL
+            """, (game_id,))
+
+            last_time = cur.fetchone()[0]
+            if last_time is None:
+                return "never"
+            return datetime.fromisoformat(last_time).strftime("%B %d, %Y")
+
+        except sqlite3.Error:
+            print(f"Something went wrong while getting all games.")
+            return None
+        finally:
+            if conn:
+                conn.close() # type: ignore

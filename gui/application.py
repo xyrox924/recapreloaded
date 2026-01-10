@@ -2,15 +2,40 @@ from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
+from utils import get_time_formatted
 from gui.addgamedialog import AddGameDialog
+from database.database import Database
 
 from config import *
+
+db = Database(str(DB_PATH))
 
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._setup_ui()
+        self._refresh_tree_view()
+
+        # sucks
+        try:
+            with open("game.txt") as f:
+                last_game_id = int(f.readline())
+                if last_game_id:
+                    for row in range(self.model.rowCount()):
+                        item = self.model.item(row)
+                        if item and item.data(Qt.UserRole) == last_game_id: # type: ignore
+                            source_index = self.model.indexFromItem(item)
+                            proxy_index = self.proxy_model.mapFromSource(source_index)
+                            self.tree.setCurrentIndex(proxy_index)
+                            self.current_game = db.get_game(last_game_id)
+                            break
+        except ValueError:
+            print("Last game_id in game.txt not a number. File tampering?")
+        except FileNotFoundError:
+            print("Last game game.txt file doesn't exist yet.")
+
+        self.current_game = None
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
@@ -147,6 +172,22 @@ class MainWindow(QMainWindow):
             }
         """)
 
+        self.model = QStandardItemModel()
+        self.root = self.model.invisibleRootItem()
+
+        self.tree.setModel(self.model)
+        self.tree.expandAll()
+
+        self.proxy_model = QSortFilterProxyModel()
+        self.proxy_model.setSourceModel(self.model)
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive) # type: ignore
+        self.proxy_model.setFilterKeyColumn(0)  # game names in collumn 0
+
+        self.tree.setModel(self.proxy_model)
+        self.tree.selectionModel().selectionChanged.connect(self._tree_on_selection_changed)
+
+        self.search_bar.textChanged.connect(self.proxy_model.setFilterFixedString)
+
         self.add_btn = QPushButton()
         self.add_btn.setText("+ add game")
         self.add_btn.setStyleSheet("""
@@ -217,16 +258,20 @@ class MainWindow(QMainWindow):
         self.notes_label = QLabel("game notes")
         self.notes_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
 
-        self.time_played_label = QLabel("Play time: ")
+        self.time_played_label = QLabel("play time: ")
         self.time_played_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
 
-        self.last_time_played_label = QLabel("Last played: ")
+        self.first_time_played_label = QLabel("first played: ")
+        self.first_time_played_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
+
+        self.last_time_played_label = QLabel("last played: ")
         self.last_time_played_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
 
         self.stat_layout.addLayout(self.title_settings_row)
         self.stat_layout.addWidget(self.dev_label)
         self.stat_layout.addWidget(self.notes_label)
         self.stat_layout.addWidget(self.time_played_label)
+        self.stat_layout.addWidget(self.first_time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
         
         self.content_layout.addWidget(self.banner_label, stretch=2) # i like stretch 2
@@ -241,13 +286,58 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.splitter)
 
+    def _refresh_tree_view(self):
+        self.model.removeRows(0, self.model.rowCount())
+
+        games = db.get_all_games()
+        if games:
+            for game in games:
+                child = QStandardItem(game[1])
+                child.setEditable(False)
+                # game id
+                child.setData(game[0], Qt.UserRole) # type: ignore
+                self.root.appendRow(child)
+
+    # on events
+    def _tree_on_selection_changed(self, selected):
+        # get the game
+        indexes = selected.indexes()
+        if not indexes:
+            return
+
+        proxy_index = indexes[0]
+        source_index = self.proxy_model.mapToSource(proxy_index)
+
+        item = self.model.itemFromIndex(source_index)
+        if item is None:
+            return
+        
+        game_id = item.data(Qt.UserRole) # type: ignore
+        self.current_game = db.get_game(game_id)
+
+        # change the info contents
+        if self.current_game:
+            self.title_label.setText(self.current_game.name)
+            self.dev_label.setText(self.current_game.developer)
+            self.notes_label.setText(self.current_game.notes)
+            self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(game_id))}")
+            self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(game_id)}")
+            self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(game_id)}")
+
     def _settings_btn_on_clicked(self):
         return
     
     def _add_btn_on_clicked(self):
         add_game_dialog = AddGameDialog()
         if add_game_dialog.exec():
-            return
+            game = add_game_dialog.get_game_data()
+            db.insert_game(game)
+            self._refresh_tree_view()
+
+    def cleanup(self):
+        if self.current_game:
+            with open("game.txt", "w") as f:
+                f.write(str(self.current_game.id))
 
 class Application(QApplication):
     def __init__(self):
@@ -256,7 +346,7 @@ class Application(QApplication):
 
     def _setup(self):
         self.setQuitOnLastWindowClosed(False)
-        self.aboutToQuit.connect(self._cleanup)
+        self.aboutToQuit.connect(self._on_about_to_quit)
 
         self.win = MainWindow()
         self.win.show()
@@ -283,11 +373,10 @@ class Application(QApplication):
 
         self.tray.setContextMenu(self.menu)
 
-    def _cleanup(self):
-        # put thread stuff
-        return
-
     # event on whatevers
+    def _on_about_to_quit(self):
+        self.win.cleanup()
+
     def _on_quit(self):
         self.quit()
 
