@@ -1,20 +1,8 @@
 import sqlite3
 
-from dataclasses import dataclass
+from pathlib import Path
 
-@dataclass
-class Executable:
-    id: int
-    game_id: int
-    path: str
-
-@dataclass
-class Game:
-    id: int
-    name: str
-    developer: str
-    notes: str
-    executables: list[Executable]
+from database.models import *
 
 class Database:
     def __init__(self, db_path: str):
@@ -59,17 +47,27 @@ class Database:
         finally:
             conn.close() # type: ignore
 
-    def insert_game(self, name: str, developer: str, notes: str, executables: list[Executable]):
+    def insert_game(self, game: Game) -> Game:
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
-
-            cur.execute("INSERT INTO games (name, developer, notes) VALUES (?, ?, ?)", (name, developer, notes))
-            game_id = cur.lastrowid
+            
+            cur.execute("INSERT INTO games (name, developer, notes) VALUES (?, ?, ?)", 
+                    (game.name, game.developer, game.notes))
+            game.id = cur.lastrowid
+            
+            # Insert executables
+            for exe in game.executables:
+                cur.execute("INSERT INTO executables (game_id, exe_name, full_path) VALUES (?, ?, ?)",
+                        (game.id, Path(exe.path).name, exe.path))
+                exe.game_id = game.id
+                exe.id = cur.lastrowid
+            
             conn.commit()
-            print(f"Game successfully inserted, game_id: {game_id}")
-        except sqlite3.Error:
-            print(f"Something went wrong while inserting a game ({name}, {developer}, {notes})")
+            return game
+        except sqlite3.Error as e:
+            print(f"Error inserting game: {e}")
+            raise
         finally:
             conn.close() # type: ignore
 

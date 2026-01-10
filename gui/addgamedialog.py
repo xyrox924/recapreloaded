@@ -6,10 +6,14 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog
 
+from database.models import *
+from executableentry import ExecutableEntry
+
 class AddGameDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
+        self.add_executable_entry()
 
     def _setup_ui(self):
         self.setWindowTitle("add new game")
@@ -157,6 +161,31 @@ class AddGameDialog(QDialog):
             }
         """)
 
+        # executables
+        exe_label = QLabel("executables")
+        exe_label.setStyleSheet("font-size: 11pt; font-weight: bold;")
+        
+        self.executables_container = QWidget()
+        self.executables_layout = QVBoxLayout(self.executables_container)
+        self.executables_layout.setAlignment(Qt.AlignTop) # type: ignore
+        self.executables_layout.setContentsMargins(0, 0, 0, 0)
+        self.executables_layout.setSpacing(10)
+
+        add_exe_btn = QPushButton("+ add executable")
+        add_exe_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #658076;
+                color: white;
+                border: none;
+                padding: 8px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #859A92;
+            }
+        """)
+        add_exe_btn.clicked.connect(self.add_executable_entry)
+
         # bottom buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -174,7 +203,7 @@ class AddGameDialog(QDialog):
                 background-color: #859A92;
             }
         """)
-        #add_btn.clicked.connect(self.validate_and_accept)
+        add_btn.clicked.connect(self.add_btn_on_clicked)
         
         cancel_btn = QPushButton("cancel")
         cancel_btn.setFixedWidth(100)
@@ -201,16 +230,51 @@ class AddGameDialog(QDialog):
         container_layout.addWidget(self.developer_edit)
         container_layout.addWidget(notes_label)
         container_layout.addWidget(self.notes_edit)
-        # executables shoiiuld be here before stretch
+        container_layout.addWidget(exe_label)  
+        container_layout.addWidget(self.executables_container)
+        container_layout.addWidget(add_exe_btn)
         container_layout.addStretch(1)
 
         scroll.setWidget(container)
         layout.addWidget(scroll)
         layout.addLayout(button_layout)
         
-        # add button layout at bottom (outside scroll)
-        #layout.addLayout(button_layout)  
-        
-        
+    def add_executable_entry(self):
+        entry = ExecutableEntry()
+        entry.remove_btn.clicked.connect(lambda: self.remove_executable_entry(entry))
+        self.executables_layout.addWidget(entry)
 
-        self.show()
+    def remove_executable_entry(self, entry):
+        if self.executables_layout.count() > 1:
+            entry.deleteLater()
+
+    def get_game_data(self):
+        executables = []
+        for i in range(self.executables_layout.count()):
+            entry = self.executables_layout.itemAt(i).widget()
+            if isinstance(entry, ExecutableEntry) and entry.path_edit.text().strip():
+                executables.append(Executable(path=entry.path_edit.text().strip()))
+        
+        return Game(
+            name=self.name_edit.text().strip(),
+            developer=self.developer_edit.text().strip(),
+            notes=self.notes_edit.toPlainText().strip(),
+            executables=executables
+        )
+
+    # on events
+    def add_btn_on_clicked(self):
+        if not self.name_edit.text().strip():
+            # could add a QMessageBox here to show error
+            self.name_edit.setFocus()
+            self.name_edit.setStyleSheet("""
+                QLineEdit {
+                    background-color: #3C3C3C;
+                    color: white;
+                    border: 2px solid #8B4C4C;
+                    padding: 8px;
+                    font-size: 10pt;
+                }
+            """)
+            return
+        self.accept()
