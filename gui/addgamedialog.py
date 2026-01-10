@@ -9,11 +9,14 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QL
 from database.models import *
 from executableentry import ExecutableEntry
 
+from config import BANNERS_PATH
+
 class AddGameDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
         self.add_executable_entry()
+        self.banner_path = None
 
     def _setup_ui(self):
         self.setWindowTitle("add new game")
@@ -99,7 +102,7 @@ class AddGameDialog(QDialog):
         """)
         self.banner_btn.setText("+")
         self.banner_btn.setFixedSize(200, 105)
-        #self.banner_btn.clicked.connect(self.select_banner)
+        self.banner_btn.clicked.connect(self._banner_btn_on_clicked)
         
         banner_btn_container = QHBoxLayout()
         banner_btn_container.addStretch()
@@ -203,7 +206,7 @@ class AddGameDialog(QDialog):
                 background-color: #859A92;
             }
         """)
-        add_btn.clicked.connect(self.add_btn_on_clicked)
+        add_btn.clicked.connect(self._add_btn_on_clicked)
         
         cancel_btn = QPushButton("cancel")
         cancel_btn.setFixedWidth(100)
@@ -259,11 +262,12 @@ class AddGameDialog(QDialog):
             name=self.name_edit.text().strip(),
             developer=self.developer_edit.text().strip(),
             notes=self.notes_edit.toPlainText().strip(),
-            executables=executables
+            executables=executables,
+            banner_path=self.banner_path
         )
 
     # on events
-    def add_btn_on_clicked(self):
+    def _add_btn_on_clicked(self):
         if not self.name_edit.text().strip():
             # could add a QMessageBox here to show error
             self.name_edit.setFocus()
@@ -278,3 +282,33 @@ class AddGameDialog(QDialog):
             """)
             return
         self.accept()
+
+    def _banner_btn_on_clicked(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "select banner image",
+            "",
+            "images (*.png *.jpg *.jpeg)"
+        )
+        
+        if file_path:
+            temp = Path(file_path)
+            try:
+                shutil.copy(str(temp), BANNERS_PATH)
+                self.banner_path = temp.name # get the filename with its extension not the full path
+
+                # set button icon to the selected image
+                banner_btn_pixmap = QPixmap(temp)
+                if not banner_btn_pixmap.isNull():
+                    scaled_pixmap = banner_btn_pixmap.scaled(
+                        self.banner_btn.size(),
+                        Qt.KeepAspectRatio, # type: ignore
+                        Qt.SmoothTransformation # type: ignore
+                    )
+                    self.banner_btn.setIcon(QIcon(scaled_pixmap))
+                    self.banner_btn.setIconSize(self.banner_btn.size())
+                    self.banner_btn.setText("")  # remove the +
+            except shutil.SameFileError:
+                print("source and destination are the same file.")
+            except PermissionError:
+                print("permission denied.")

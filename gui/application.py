@@ -1,3 +1,5 @@
+import os
+
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
@@ -17,6 +19,12 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._refresh_tree_view()
 
+        os.makedirs(str(DBS_PATH), exist_ok=True)
+        os.makedirs(str(BANNERS_PATH), exist_ok=True)
+        os.makedirs(str(ICONS_PATH), exist_ok=True)
+
+        self.current_game = None
+        self.current_game_banner_pixmap = None
         # sucks
         try:
             with open("game.txt") as f:
@@ -35,7 +43,9 @@ class MainWindow(QMainWindow):
         except FileNotFoundError:
             print("Last game game.txt file doesn't exist yet.")
 
-        self.current_game = None
+        # i'm hitler and i love qt event queue
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._refresh_game_banner)
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
@@ -222,7 +232,8 @@ class MainWindow(QMainWindow):
         self.banner_label.setMinimumHeight(240)
         self.banner_label.setMaximumHeight(380)
         self.banner_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # type: ignore
-        self.banner_label.setText("BANNER HERE")
+        #self.banner_label.setText("BANNER HERE")
+        #self.banner_label.setScaledContents(False)
 
         self.title_settings_row = QHBoxLayout()
 
@@ -298,7 +309,38 @@ class MainWindow(QMainWindow):
                 child.setData(game[0], Qt.UserRole) # type: ignore
                 self.root.appendRow(child)
 
+    def _refresh_game_banner(self):
+        if self.current_game is not None and self.current_game.banner_path is not None:
+                if self.current_game_banner_pixmap is None or self.current_game_banner_pixmap.isNull():
+                    self.current_game_banner_pixmap = QPixmap(Path(BANNERS_PATH / self.current_game.banner_path))
+                    
+                if not self.current_game_banner_pixmap.isNull():
+                    scaled_pixmap = self.current_game_banner_pixmap.scaled(
+                        self.banner_label.size(),
+                        Qt.KeepAspectRatioByExpanding,  # type: ignore
+                        Qt.SmoothTransformation  # type: ignore
+                    )
+                    
+                    x = (scaled_pixmap.width() - self.banner_label.width()) // 2
+                    y = (scaled_pixmap.height() - self.banner_label.height()) // 2
+                    
+                    cropped_pixmap = scaled_pixmap.copy(
+                        x, y, 
+                        self.banner_label.width(), 
+                        self.banner_label.height()
+                    )
+                    
+                    self.banner_label.setPixmap(cropped_pixmap)
+                else:
+                    self.banner_label.clear()
+        else:
+            self.banner_label.clear()
+
     # on events
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_game_banner()
+
     def _tree_on_selection_changed(self, selected):
         # get the game
         indexes = selected.indexes()
@@ -316,14 +358,16 @@ class MainWindow(QMainWindow):
         self.current_game = db.get_game(game_id)
 
         # change the info contents
-        if self.current_game:
+        if self.current_game is not None:
             self.title_label.setText(self.current_game.name)
             self.dev_label.setText(self.current_game.developer)
             self.notes_label.setText(self.current_game.notes)
             self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(game_id))}")
             self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(game_id)}")
             self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(game_id)}")
-
+            self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't
+            self._refresh_game_banner()
+            
     def _settings_btn_on_clicked(self):
         return
     

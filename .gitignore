@@ -4,3 +4,5 @@ database/__pycache__
 *.code-workspace
 *.db
 *.pyc
+*.jpg
+*.png

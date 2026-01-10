@@ -13,3 +13,4 @@ class Game:
     notes: str
     executables: list[Executable]
     id: int | None = None
+    banner_path: str | None = None

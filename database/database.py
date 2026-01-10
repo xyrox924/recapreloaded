@@ -21,7 +21,8 @@ class Database:
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
                     developer TEXT,
-                    notes TEXT
+                    notes TEXT,
+                    banner_path TEXT
                 )
             """)
             cur.execute("""
@@ -42,6 +43,7 @@ class Database:
                     FOREIGN KEY (game_id) REFERENCES games(id)
                 )
             """)
+
             conn.commit()
         except sqlite3.Error:
             print("Something went wrong while creating the database")
@@ -57,8 +59,8 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
             
-            cur.execute("INSERT INTO games (name, developer, notes) VALUES (?, ?, ?)", 
-                    (game.name, game.developer, game.notes))
+            cur.execute("INSERT INTO games (name, developer, notes, banner_path) VALUES (?, ?, ?, ?)", 
+                    (game.name, game.developer, game.notes, game.banner_path))
             game.id = cur.lastrowid
             
             for exe in game.executables:
@@ -82,7 +84,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
 
-            cur.execute("SELECT name, developer, notes FROM games WHERE id = ?", (game_id,))
+            cur.execute("SELECT name, developer, notes, banner_path FROM games WHERE id = ?", (game_id,))
 
             game_row = cur.fetchone()
         
@@ -94,7 +96,8 @@ class Database:
                 name=game_row[0],
                 developer=game_row[1],
                 notes=game_row[2],
-                executables=[] # uhh hmm we don't need this in this method so empty list
+                executables=[], # uhh hmm we don't need this in this method so empty list
+                banner_path=game_row[3]
             )
 
         except sqlite3.Error:
@@ -142,7 +145,8 @@ class Database:
                 name=game_row[0],
                 developer=game_row[1],
                 notes=game_row[2],
-                executables=executable_list
+                executables=executable_list,
+                banner_path=game_row[3]
             )
 
         except sqlite3.Error:
