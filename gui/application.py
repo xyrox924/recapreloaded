@@ -57,10 +57,12 @@ class MainWindow(QMainWindow):
         # i'm hitler and i love qt event queue
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self._refresh_game_banner)
+        QTimer.singleShot(10, lambda: self.resizeEvent(None))  # ADD THIS - force initial layout
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
-        self.resize(1000, 600)
+        self.resize(1000, 640)
+        self.setMinimumHeight(600)
 
         self.splitter = QSplitter(Qt.Horizontal) # type: ignore
         self.splitter.setStyleSheet("""
@@ -241,9 +243,12 @@ class MainWindow(QMainWindow):
         self.banner_label = QLabel()
         self.banner_label.setAlignment(Qt.AlignCenter) # type: ignore
         self.banner_label.setStyleSheet("background-color: #3C3C3C;")
-        self.banner_label.setMinimumHeight(240)
-        self.banner_label.setMaximumHeight(380)
-        self.banner_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # type: ignore
+        self.banner_label.setMinimumHeight(150)
+        self.banner_label.setMaximumHeight(440)
+        self.banner_label.setSizePolicy(
+            QSizePolicy.Expanding, # type: ignore
+            QSizePolicy.Ignored # type: ignore
+        )
         #self.banner_label.setText("BANNER HERE")
         #self.banner_label.setScaledContents(False)
 
@@ -298,12 +303,29 @@ class MainWindow(QMainWindow):
         self.stat_layout.addWidget(self.first_time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
 
-        self.blur_transition = BlurTransition(min_height=60, max_height=120)
-        
-        self.content_layout.addWidget(self.banner_label, stretch=2) # i like stretch 2
-        self.content_layout.addWidget(self.blur_transition)
-        self.content_layout.addLayout(self.stat_layout)
-        self.content_layout.addStretch(1) # just so there's space at the bottom so everything gets moved to the top
+        self.blur_transition = BlurTransition(min_height=140, max_height=900, bg_color="#2C2C2C")
+
+        self.content_bottom = QWidget()
+        self.content_bottom.setStyleSheet("background-color: #2C2D2C;")  # Match background
+        self.content_bottom.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # type: ignore
+        #self.content_bottom.setMinimumHeight(300)
+
+        self.blur_transition.setParent(self.content_bottom)
+
+        self.stats_wrapper = QWidget(self.content_bottom)
+        self.stats_wrapper.setStyleSheet("background: transparent;")  # transparent so blur shows through
+        self.stats_wrapper_layout = QVBoxLayout(self.stats_wrapper)
+        self.stats_wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        self.stats_wrapper_layout.setSpacing(0)
+
+        self.stat_layout.setContentsMargins(10, 10, 10, 10)
+        self.stats_wrapper_layout.addLayout(self.stat_layout)
+        self.stats_wrapper_layout.addStretch(1)
+
+        self.content_layout.addWidget(self.banner_label)
+        self.content_layout.addWidget(self.content_bottom)
+        self.content_layout.setStretch(0, 2)  # banner
+        self.content_layout.setStretch(1, 3)  # content_bottom
 
         self.splitter.addWidget(self.tree_container)
         self.splitter.addWidget(self.content_container)
@@ -333,8 +355,8 @@ class MainWindow(QMainWindow):
                 if not self.current_game_banner_pixmap.isNull():
                     scaled_pixmap = self.current_game_banner_pixmap.scaled(
                         self.banner_label.size(),
-                        Qt.KeepAspectRatioByExpanding,  # type: ignore
-                        Qt.SmoothTransformation  # type: ignore
+                        Qt.KeepAspectRatioByExpanding, # type: ignore
+                        Qt.SmoothTransformation # type: ignore
                     )
                     
                     x = (scaled_pixmap.width() - self.banner_label.width()) // 2
@@ -347,6 +369,8 @@ class MainWindow(QMainWindow):
                     )
                     
                     self.banner_label.setPixmap(cropped_pixmap)
+                    
+                    # update blur transition with cropped pixmap AND set proportional height
                     self.blur_transition.set_proportional_height(self.banner_label.height())
                     self.blur_transition.set_banner_pixmap(cropped_pixmap)
                 else:
@@ -395,6 +419,19 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._refresh_game_banner()
+
+        if hasattr(self, 'blur_transition') and hasattr(self, 'stats_wrapper') and hasattr(self, 'content_bottom'):
+            # get the actual width and the blur's current height (set by set_proportional_height)
+            width = self.content_bottom.width()
+            blur_height = self.blur_transition.current_height  # Use the proportional height!
+            
+            # position blur at top with its proportional height
+            self.blur_transition.setGeometry(0, 0, width, blur_height)
+            
+            # stats wrapper overlays from top, extending to bottom
+            bottom_height = max(self.content_bottom.height(), 400)
+            self.stats_wrapper.setGeometry(0, 0, width, bottom_height)
+            self.stats_wrapper.raise_()  # ensure stats are on top i hate this
 
     def _tree_on_selection_changed(self, selected):
         # get the game

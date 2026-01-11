@@ -4,17 +4,23 @@ from PySide6.QtGui import QPainter, QPixmap, QImage, QLinearGradient, QColor, QT
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsBlurEffect
 
 class BlurTransition(QWidget):
-    def __init__(self, parent=None, min_height=60, max_height=120):
+    def __init__(self, parent=None, min_height=60, max_height=120, bg_color="#FFFFFF"):
         super().__init__(parent)
         self.min_height = min_height
         self.max_height = max_height
         self.current_height = max_height
+        self.bg_color = QColor(bg_color) # color it fades into
         self.blurred_pixmap = None
         self.cached_scaled_pixmap = None
         self.last_width = 0
         self.last_height = 0
         self.setMinimumHeight(min_height)
         self.setMaximumHeight(max_height)
+
+    def set_background_color(self, color):
+        self.bg_color = QColor(color)
+        self.cached_scaled_pixmap = None  # clear cache to force redraw
+        self.update()
         
     def set_banner_pixmap(self, pixmap):
         if pixmap is None or pixmap.isNull():
@@ -29,7 +35,7 @@ class BlurTransition(QWidget):
     
     def set_proportional_height(self, banner_height):
         # scale between min and max based on banner size
-        proportion = 0.3  # 30% of banner height
+        proportion = 1.2
         new_height = int(banner_height * proportion)
         self.current_height = max(self.min_height, min(new_height, self.max_height))
         self.setFixedHeight(self.current_height)
@@ -60,6 +66,7 @@ class BlurTransition(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing) # type: ignore
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)   # type: ignore
         
         if self.blurred_pixmap and not self.blurred_pixmap.isNull():
             # only rescale if width or height changed
@@ -80,9 +87,9 @@ class BlurTransition(QWidget):
                     scaled_blur.width(), extract_height
                 )
                 
-                # mirror on y axis
+                # mirror on y axis and stretch a bit
                 self.cached_scaled_pixmap = bottom_portion.transformed(
-                    QTransform().scale(1, -1)
+                    QTransform().scale(1, -1.3)
                 )
                 self.last_width = self.width()
                 self.last_height = self.height()
@@ -91,13 +98,14 @@ class BlurTransition(QWidget):
             
             # create vertical-only gradient overlay that fades to solid color
             gradient = QLinearGradient(0, 0, 0, self.height())
-            gradient.setColorAt(0, QColor(44, 45, 44, 100))   # #2C2D2C with transparency
-            gradient.setColorAt(0.5, QColor(44, 45, 44, 180))
-            gradient.setColorAt(1, QColor(44, 45, 44, 255))   # Solid #2C2D2C at bottom
+            gradient.setColorAt(0.0, QColor(self.bg_color.red(), self.bg_color.green(), self.bg_color.blue(), 50))
+            gradient.setColorAt(0.3, QColor(self.bg_color.red(), self.bg_color.green(), self.bg_color.blue(), 120))
+            gradient.setColorAt(0.6, QColor(self.bg_color.red(), self.bg_color.green(), self.bg_color.blue(), 200))
+            gradient.setColorAt(1.0, QColor(self.bg_color.red(), self.bg_color.green(), self.bg_color.blue(), 255))
             
             painter.fillRect(0, 0, self.width(), self.height(), gradient)
         else:
             # fallback to solid color
-            painter.fillRect(self.rect(), QColor(44, 45, 44))  # #2C2D2C
+            painter.fillRect(self.rect(), self.bg_color)
         
         painter.end()
