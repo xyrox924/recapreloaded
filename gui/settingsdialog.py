@@ -285,6 +285,7 @@ class SettingsDialog(QDialog):
                 executables.append(Executable(path=entry.path_edit.text().strip()))
         
         return Game(
+            id=self.game.id,
             name=self.name_edit.text().strip(),
             developer=self.developer_edit.text().strip(),
             notes=self.notes_edit.toPlainText().strip(),

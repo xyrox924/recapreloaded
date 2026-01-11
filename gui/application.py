@@ -337,6 +337,18 @@ class MainWindow(QMainWindow):
         else:
             self.banner_label.clear()
 
+    def _refresh_game_content(self):
+        # change the info contents
+        if self.current_game is not None:
+            self.title_label.setText(self.current_game.name)
+            self.dev_label.setText(self.current_game.developer)
+            self.notes_label.setText(self.current_game.notes)
+            self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(self.current_game.id))}")
+            self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(self.current_game.id)}")
+            self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(self.current_game.id)}")
+            self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't
+            self._refresh_game_banner()
+
     # on events
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -358,16 +370,7 @@ class MainWindow(QMainWindow):
         game_id = item.data(Qt.UserRole) # type: ignore
         self.current_game = db.get_game(game_id)
 
-        # change the info contents
-        if self.current_game is not None:
-            self.title_label.setText(self.current_game.name)
-            self.dev_label.setText(self.current_game.developer)
-            self.notes_label.setText(self.current_game.notes)
-            self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(game_id))}")
-            self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(game_id)}")
-            self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(game_id)}")
-            self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't
-            self._refresh_game_banner()
+        self._refresh_game_content()
             
     def _settings_btn_on_clicked(self):
         if self.current_game is not None:
@@ -375,8 +378,9 @@ class MainWindow(QMainWindow):
             # it gets the literal same exact game from the database no way this should ever fail
             settings_dialog = SettingsDialog(self.current_game) # type: ignore
             if settings_dialog.exec():
-                game = settings_dialog.get_game_data()
-                db.update_game(game)
+                self.current_game = settings_dialog.get_game_data()
+                db.update_game(self.current_game)
+                self._refresh_game_content()
             
     def _add_btn_on_clicked(self):
         add_game_dialog = AddGameDialog()
