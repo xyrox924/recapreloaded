@@ -7,7 +7,7 @@ from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog
 
 from database.models import *
-from executableentry import ExecutableEntry
+from gui.executableentry import ExecutableEntry
 
 from config import BANNERS_PATH
 

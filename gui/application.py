@@ -12,6 +12,7 @@ from utils import get_time_formatted, get_running_process_names
 from database.database import Database
 from gui.addgamedialog import AddGameDialog
 from gui.settingsdialog import SettingsDialog
+from gui.blurtransition import BlurTransition
 
 from config import *
 
@@ -235,6 +236,7 @@ class MainWindow(QMainWindow):
 
         self.content_layout = QVBoxLayout(self.content_container)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(0)
 
         self.banner_label = QLabel()
         self.banner_label.setAlignment(Qt.AlignCenter) # type: ignore
@@ -272,6 +274,7 @@ class MainWindow(QMainWindow):
 
         self.stat_layout = QVBoxLayout()
         self.stat_layout.setContentsMargins(10, 0, 10, 10)
+        self.stat_layout.setSpacing(6)
 
         self.dev_label = QLabel("game dev")
         self.dev_label.setStyleSheet("color: white; font-size: 14pt; font-weight: bold;")
@@ -294,8 +297,12 @@ class MainWindow(QMainWindow):
         self.stat_layout.addWidget(self.time_played_label)
         self.stat_layout.addWidget(self.first_time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
+
+        self.blur_transition = BlurTransition(transition_height=120)
+
         
         self.content_layout.addWidget(self.banner_label, stretch=2) # i like stretch 2
+        self.content_layout.addWidget(self.blur_transition)
         self.content_layout.addLayout(self.stat_layout)
         self.content_layout.addStretch(1) # just so there's space at the bottom so everything gets moved to the top
 
@@ -341,10 +348,13 @@ class MainWindow(QMainWindow):
                     )
                     
                     self.banner_label.setPixmap(cropped_pixmap)
+                    self.blur_transition.set_banner_pixmap(cropped_pixmap)
                 else:
                     self.banner_label.clear()
+                    self.blur_transition.set_banner_pixmap(None)
         else:
             self.banner_label.clear()
+            self.blur_transition.set_banner_pixmap(None)
 
     def _refresh_game_content(self):
         # change the info contents

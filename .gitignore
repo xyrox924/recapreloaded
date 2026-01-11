@@ -7,3 +7,4 @@ database/__pycache__
 *.jpg
 *.png
 game.txt
+gui/banners

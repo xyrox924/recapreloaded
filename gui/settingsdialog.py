@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QL
 
 from database.models import *
 from database.database import Database
-from executableentry import ExecutableEntry
+from gui.executableentry import ExecutableEntry
 
 from config import BANNERS_PATH
 
