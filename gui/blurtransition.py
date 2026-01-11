@@ -4,18 +4,37 @@ from PySide6.QtGui import QPainter, QPixmap, QImage, QLinearGradient, QColor, QT
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsBlurEffect
 
 class BlurTransition(QWidget):
-    def __init__(self, parent=None, transition_height=80):
+    def __init__(self, parent=None, min_height=60, max_height=120):
         super().__init__(parent)
-        self.transition_height = transition_height
+        self.min_height = min_height
+        self.max_height = max_height
+        self.current_height = max_height
         self.blurred_pixmap = None
-        self.setFixedHeight(transition_height)
+        self.cached_scaled_pixmap = None
+        self.last_width = 0
+        self.last_height = 0
+        self.setMinimumHeight(min_height)
+        self.setMaximumHeight(max_height)
         
     def set_banner_pixmap(self, pixmap):
         if pixmap is None or pixmap.isNull():
             self.blurred_pixmap = None
+            self.cached_scaled_pixmap = None
         else:
             self.blurred_pixmap = self._create_blurred_pixmap(pixmap)
-        self.update()
+            self.cached_scaled_pixmap = None  # clear cache when new image is set
+        self.last_width = 0
+        self.last_height = 0
+        self.update()  # trigger repaint
+    
+    def set_proportional_height(self, banner_height):
+        # scale between min and max based on banner size
+        proportion = 0.3  # 30% of banner height
+        new_height = int(banner_height * proportion)
+        self.current_height = max(self.min_height, min(new_height, self.max_height))
+        self.setFixedHeight(self.current_height)
+        self.cached_scaled_pixmap = None  # clear cache when height changes
+        self.last_height = 0
         
     def _create_blurred_pixmap(self, pixmap):
         if pixmap.isNull():
@@ -43,32 +62,42 @@ class BlurTransition(QWidget):
         painter.setRenderHint(QPainter.Antialiasing) # type: ignore
         
         if self.blurred_pixmap and not self.blurred_pixmap.isNull():
-            scaled_blur = self.blurred_pixmap.scaled(
-                self.width(), 
-                self.blurred_pixmap.height(),
-                Qt.KeepAspectRatioByExpanding, # type: ignore
-                Qt.SmoothTransformation # type: ignore
-            )
+            # only rescale if width or height changed
+            if self.cached_scaled_pixmap is None or self.last_width != self.width() or self.last_height != self.height():
+                scaled_blur = self.blurred_pixmap.scaled(
+                    self.width(), 
+                    self.blurred_pixmap.height(),
+                    Qt.KeepAspectRatio, # type: ignore
+                    Qt.SmoothTransformation # type: ignore
+                )
+                
+                # extract the bottom portion (last N pixels)
+                extract_height = min(self.current_height, scaled_blur.height())
+                source_y = scaled_blur.height() - extract_height
+                
+                bottom_portion = scaled_blur.copy(
+                    0, source_y,
+                    scaled_blur.width(), extract_height
+                )
+                
+                # mirror on y axis
+                self.cached_scaled_pixmap = bottom_portion.transformed(
+                    QTransform().scale(1, -1)
+                )
+                self.last_width = self.width()
+                self.last_height = self.height()
             
-            source_y = max(0, scaled_blur.height() - self.transition_height - 50)
-            source_rect_pixmap = scaled_blur.copy(
-                0, source_y,
-                self.width(), self.transition_height
-            )
-
-            flipped_pixmap = source_rect_pixmap.transformed(
-                QTransform().scale(1, -1)  # Scale Y by -1 to flip vertically
-            )
+            painter.drawPixmap(0, 0, self.cached_scaled_pixmap)
             
-            painter.drawPixmap(0, 0, flipped_pixmap)
-            
+            # create vertical-only gradient overlay that fades to solid color
             gradient = QLinearGradient(0, 0, 0, self.height())
-            gradient.setColorAt(0, QColor(44, 45, 44, 100))
+            gradient.setColorAt(0, QColor(44, 45, 44, 100))   # #2C2D2C with transparency
             gradient.setColorAt(0.5, QColor(44, 45, 44, 180))
-            gradient.setColorAt(1, QColor(44, 45, 44, 255))
+            gradient.setColorAt(1, QColor(44, 45, 44, 255))   # Solid #2C2D2C at bottom
             
             painter.fillRect(0, 0, self.width(), self.height(), gradient)
         else:
-            painter.fillRect(self.rect(), QColor(44, 45, 44))
+            # fallback to solid color
+            painter.fillRect(self.rect(), QColor(44, 45, 44))  # #2C2D2C
         
         painter.end()

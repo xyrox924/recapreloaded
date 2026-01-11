@@ -298,8 +298,7 @@ class MainWindow(QMainWindow):
         self.stat_layout.addWidget(self.first_time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
 
-        self.blur_transition = BlurTransition(transition_height=120)
-
+        self.blur_transition = BlurTransition(min_height=60, max_height=120)
         
         self.content_layout.addWidget(self.banner_label, stretch=2) # i like stretch 2
         self.content_layout.addWidget(self.blur_transition)
@@ -348,6 +347,7 @@ class MainWindow(QMainWindow):
                     )
                     
                     self.banner_label.setPixmap(cropped_pixmap)
+                    self.blur_transition.set_proportional_height(self.banner_label.height())
                     self.blur_transition.set_banner_pixmap(cropped_pixmap)
                 else:
                     self.banner_label.clear()
@@ -357,7 +357,6 @@ class MainWindow(QMainWindow):
             self.blur_transition.set_banner_pixmap(None)
 
     def _refresh_game_content(self):
-        # change the info contents
         if self.current_game is not None:
             self.title_label.setText(self.current_game.name)
             self.dev_label.setText(self.current_game.developer)
@@ -365,7 +364,7 @@ class MainWindow(QMainWindow):
             self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(self.current_game.id))}")
             self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(self.current_game.id)}")
             self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(self.current_game.id)}")
-            self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't
+            self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
     def _tracking_loop(self):
