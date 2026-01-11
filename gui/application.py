@@ -1,10 +1,14 @@
 import os
+import time
+import threading
+
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
-from utils import get_time_formatted
+from utils import get_time_formatted, get_running_process_names
 from database.database import Database
 from gui.addgamedialog import AddGameDialog
 from gui.settingsdialog import SettingsDialog
@@ -43,6 +47,11 @@ class MainWindow(QMainWindow):
             print("Last game_id in game.txt not a number. File tampering?")
         except FileNotFoundError:
             print("Last game game.txt file doesn't exist yet.")
+
+        self.active_sessions = {}
+        self.stop_event = threading.Event()
+        self.tracker_thread = threading.Thread(target=self._tracking_loop, daemon=True)
+        self.tracker_thread.start()
 
         # i'm hitler and i love qt event queue
         from PySide6.QtCore import QTimer
@@ -349,6 +358,30 @@ class MainWindow(QMainWindow):
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't
             self._refresh_game_banner()
 
+    def _tracking_loop(self):
+        while not self.stop_event.is_set():
+            running_processes = get_running_process_names()
+            known_exes = db.get_known_executables()
+
+            for exe_name, game_id in known_exes.items():
+                if exe_name in running_processes and game_id not in self.active_sessions:
+                    self.active_sessions[game_id] = datetime.now()
+                    print(f"Started tracking game {game_id}")
+
+            for game_id in list(self.active_sessions.keys()):
+                # Check if ANY exe for this game is still running
+                game_exes = [exe for exe, gid in known_exes.items() if gid == game_id]
+                if not any(exe in running_processes for exe in game_exes):
+                    start_time = self.active_sessions[game_id]
+                    end_time = datetime.now()
+                    
+                    db.insert_session(game_id, start_time, end_time)
+                    del self.active_sessions[game_id]
+                    
+                    print(f"Ended tracking game {game_id}")
+
+            time.sleep(10)
+
     # on events
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -390,6 +423,12 @@ class MainWindow(QMainWindow):
             self._refresh_tree_view()
 
     def cleanup(self):
+        for game_id, start_time in self.active_sessions.items():
+            db.insert_session(game_id, start_time, datetime.now())
+        
+        self.stop_event.set()
+        self.tracker_thread.join(timeout=2)
+
         if self.current_game:
             with open("game.txt", "w") as f:
                 f.write(str(self.current_game.id))

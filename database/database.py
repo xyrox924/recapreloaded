@@ -282,3 +282,38 @@ class Database:
         finally:
             if conn:
                 conn.close() # type: ignore
+
+    def insert_session(self, game_id, start_time, end_time):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("INSERT INTO sessions (game_id, start_time, end_time) VALUES (?, ?, ?)",
+                        (game_id, start_time, end_time))
+            conn.commit() # i always forget this somehow
+        except sqlite3.Error:
+            print(f"Something went wrong while writing session.")
+            return None
+        finally:
+            if conn:
+                conn.close() # type: ignore
+
+    def get_known_executables(self):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            
+            cur.execute("SELECT exe_name, game_id FROM executables")
+            rows = cur.fetchall()
+            
+            # return as dict: exe_name -> game_id
+            return {row[0].lower(): row[1] for row in rows}
+        
+        except sqlite3.Error as e:
+            print(f"Error getting executables: {e}")
+            return {}
+        finally:
+            if conn:
+                conn.close()

@@ -12,7 +12,7 @@ def get_running_process_names():
         try:
             if proc.info['name']:
                 names.add(proc.info['name'].lower())
-                print(proc.info['name'].lower())
+                #print(proc.info['name'].lower())
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     return names
