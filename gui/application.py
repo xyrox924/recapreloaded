@@ -5,8 +5,9 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAc
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
 from utils import get_time_formatted
-from gui.addgamedialog import AddGameDialog
 from database.database import Database
+from gui.addgamedialog import AddGameDialog
+from gui.settingsdialog import SettingsDialog
 
 from config import *
 
@@ -369,8 +370,14 @@ class MainWindow(QMainWindow):
             self._refresh_game_banner()
             
     def _settings_btn_on_clicked(self):
-        return
-    
+        if self.current_game is not None:
+            self.current_game = db.get_game_full(self.current_game.id) # type: ignore
+            # it gets the literal same exact game from the database no way this should ever fail
+            settings_dialog = SettingsDialog(self.current_game) # type: ignore
+            if settings_dialog.exec():
+                game = settings_dialog.get_game_data()
+                db.update_game(game)
+            
     def _add_btn_on_clicked(self):
         add_game_dialog = AddGameDialog()
         if add_game_dialog.exec():
@@ -393,9 +400,8 @@ class Application(QApplication):
         self.aboutToQuit.connect(self._on_about_to_quit)
 
         self.win = MainWindow()
-        self.win.show()
 
-        # icon shenanigans so it appears in the taskbar and tray properly
+        # icon shenanigans so it appears in the taskbar and tray properly. i have no idea why this is needed
         try:
             import ctypes
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("recap.rebooted.1")
@@ -404,6 +410,7 @@ class Application(QApplication):
 
         icon = QIcon(str(ICON_PATH))
         self.setWindowIcon(icon)
+        self.win.setWindowIcon(icon)
 
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(icon)
@@ -416,6 +423,8 @@ class Application(QApplication):
         self.menu.addAction(self.quit_action)
 
         self.tray.setContextMenu(self.menu)
+        
+        self.win.show()
 
     # event on whatevers
     def _on_about_to_quit(self):

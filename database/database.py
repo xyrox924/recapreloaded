@@ -78,6 +78,37 @@ class Database:
             if conn:
                 conn.close() # type: ignore
 
+    def update_game(self, game: Game) -> Game:
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            
+            cur.execute("""UPDATE games 
+                        SET name = ?, developer = ?, notes = ?, banner_path = ?
+                        WHERE id = ?""", 
+                        (game.name, game.developer, game.notes, game.banner_path, game.id))
+            
+            # delete existing executables for this game
+            cur.execute("DELETE FROM executables WHERE game_id = ?", (game.id,))
+            
+            # insert the new/updated executables
+            for exe in game.executables:
+                cur.execute("""INSERT INTO executables (game_id, exe_name, full_path) 
+                            VALUES (?, ?, ?)""",
+                            (game.id, Path(exe.path).name, exe.path))
+                exe.game_id = game.id
+                exe.id = cur.lastrowid
+            
+            conn.commit()
+            return game
+        except sqlite3.Error as e:
+            print(f"error updating game: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()  # type: ignore
+
     def get_game(self, game_id: int):
         conn = None
         try:
@@ -113,7 +144,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
 
-            cur.execute("SELECT name, developer, notes FROM games WHERE id = ?", (game_id,))
+            cur.execute("SELECT name, developer, notes, banner_path FROM games WHERE id = ?", (game_id,))
 
             game_row = cur.fetchone()
             if not game_row:
@@ -133,12 +164,15 @@ class Database:
                     name=game_row[0],
                     developer=game_row[1],
                     notes=game_row[2],
-                    executables=[] # well there weren't any exes sooo
+                    executables=[], # well there weren't any exes sooo
+                    banner_path=game_row[3]
                 )
 
             executable_list = []
             for exe in exe_rows:
                 executable_list.append(exe[0])
+
+            print(game_row)
             
             return Game(
                 id=game_id,
