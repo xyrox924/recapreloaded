@@ -18,7 +18,6 @@ class SettingsDialog(QDialog):
         self._setup_ui()
 
         self.game = game
-        print(game)
 
         self.banner_path = ""
         if game.banner_path is not None:

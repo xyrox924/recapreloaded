@@ -50,7 +50,7 @@ class BlurTransition(QWidget):
         pixmap_item = scene.addPixmap(pixmap)
         
         blur_effect = QGraphicsBlurEffect()
-        blur_effect.setBlurRadius(40)  # Heavy blur - adjust as needed
+        blur_effect.setBlurRadius(40)
         pixmap_item.setGraphicsEffect(blur_effect)
         
         blurred_image = QImage(pixmap.size(), QImage.Format_ARGB32) # type: ignore

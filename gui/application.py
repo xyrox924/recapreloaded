@@ -4,7 +4,7 @@ import threading
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject
+from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
@@ -13,10 +13,15 @@ from database.database import Database
 from gui.addgamedialog import AddGameDialog
 from gui.settingsdialog import SettingsDialog
 from gui.blurtransition import BlurTransition
+from gui.notification import notify
 
 from config import *
 
 db = Database(str(DB_PATH))
+
+class TrackingSignals(QObject):
+    game_started = Signal(str)  # game_name
+    game_stopped = Signal(str)  # game_name
 
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
 class MainWindow(QMainWindow):
@@ -49,15 +54,14 @@ class MainWindow(QMainWindow):
         except FileNotFoundError:
             print("Last game game.txt file doesn't exist yet.")
 
+        self.tracking_signals = TrackingSignals()
+        self.tracking_signals.game_started.connect(self._on_game_started)
+        self.tracking_signals.game_stopped.connect(self._on_game_stopped)
+
         self.active_sessions = {}
         self.stop_event = threading.Event()
-        self.tracker_thread = threading.Thread(target=self._tracking_loop, daemon=True)
+        self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
         self.tracker_thread.start()
-
-        # i'm hitler and i love qt event queue
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, self._refresh_game_banner)
-        QTimer.singleShot(10, lambda: self.resizeEvent(None))  # ADD THIS - force initial layout
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
@@ -335,6 +339,10 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.splitter)
 
+        # i'm hitler and i love qt event queue
+        QTimer.singleShot(0, self._refresh_game_banner)
+        QTimer.singleShot(10, lambda: self.resizeEvent(None))
+
     def _refresh_tree_view(self):
         self.model.removeRows(0, self.model.rowCount())
 
@@ -391,7 +399,7 @@ class MainWindow(QMainWindow):
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
-    def _tracking_loop(self):
+    def _tracking_loop(self, signals):
         while not self.stop_event.is_set():
             running_processes = get_running_process_names()
             known_exes = db.get_known_executables()
@@ -399,7 +407,11 @@ class MainWindow(QMainWindow):
             for exe_name, game_id in known_exes.items():
                 if exe_name in running_processes and game_id not in self.active_sessions:
                     self.active_sessions[game_id] = datetime.now()
-                    print(f"Started tracking game {game_id}")
+
+                    game = db.get_game(game_id)
+                    # None checking should be safe to ignore don't care
+                    print(f"Started tracking game {game.name}") # type: ignore
+                    signals.game_started.emit(game.name) # type: ignore
 
             for game_id in list(self.active_sessions.keys()):
                 # check if ANY exe for this game is still running
@@ -411,15 +423,26 @@ class MainWindow(QMainWindow):
                     db.insert_session(game_id, start_time, end_time)
                     del self.active_sessions[game_id]
                     
-                    print(f"Ended tracking game {game_id}")
+                    game = db.get_game(game_id)
+                    # None checking here too should be safe to ignore don't care
+                    print(f"Ended tracking game {game.name}") # type: ignore # should be safe to ignore too don't care also
+                    signals.game_stopped.emit(game.name) # type: ignore
 
             time.sleep(10)
+
+    # signal handlers
+    def _on_game_started(self, game_name):
+        notify("Now playing", game_name)
+
+    def _on_game_stopped(self, game_name):
+        notify("Stopped playing", game_name)
 
     # on events
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._refresh_game_banner()
 
+        # the hitler strikes again
         if hasattr(self, 'blur_transition') and hasattr(self, 'stats_wrapper') and hasattr(self, 'content_bottom'):
             # get the actual width and the blur's current height (set by set_proportional_height)
             width = self.content_bottom.width()
@@ -525,3 +548,5 @@ class Application(QApplication):
     def _tray_on_clicked(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.win.show()
+            self.win.raise_()  # bring to front
+            self.win.activateWindow()  # focus it

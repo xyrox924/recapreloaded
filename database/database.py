@@ -22,7 +22,7 @@ class Database:
                     name TEXT NOT NULL UNIQUE,
                     developer TEXT,
                     notes TEXT,
-                    banner_path TEXT
+                    banner_file TEXT
                 )
             """)
             cur.execute("""
@@ -59,7 +59,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
             
-            cur.execute("INSERT INTO games (name, developer, notes, banner_path) VALUES (?, ?, ?, ?)", 
+            cur.execute("INSERT INTO games (name, developer, notes, banner_file) VALUES (?, ?, ?, ?)", 
                     (game.name, game.developer, game.notes, game.banner_path))
             game.id = cur.lastrowid
             
@@ -85,7 +85,7 @@ class Database:
             cur = conn.cursor()
             
             cur.execute("""UPDATE games 
-                        SET name = ?, developer = ?, notes = ?, banner_path = ?
+                        SET name = ?, developer = ?, notes = ?, banner_file = ?
                         WHERE id = ?""", 
                         (game.name, game.developer, game.notes, game.banner_path, game.id))
             
@@ -115,7 +115,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
 
-            cur.execute("SELECT name, developer, notes, banner_path FROM games WHERE id = ?", (game_id,))
+            cur.execute("SELECT name, developer, notes, banner_file FROM games WHERE id = ?", (game_id,))
 
             game_row = cur.fetchone()
         
@@ -144,7 +144,7 @@ class Database:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
 
-            cur.execute("SELECT name, developer, notes, banner_path FROM games WHERE id = ?", (game_id,))
+            cur.execute("SELECT name, developer, notes, banner_file FROM games WHERE id = ?", (game_id,))
 
             game_row = cur.fetchone()
             if not game_row:
@@ -171,8 +171,6 @@ class Database:
             executable_list = []
             for exe in exe_rows:
                 executable_list.append(exe[0])
-
-            print(game_row)
             
             return Game(
                 id=game_id,
