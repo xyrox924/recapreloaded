@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
                     print(f"Started tracking game {game_id}")
 
             for game_id in list(self.active_sessions.keys()):
-                # Check if ANY exe for this game is still running
+                # check if ANY exe for this game is still running
                 game_exes = [exe for exe, gid in known_exes.items() if gid == game_id]
                 if not any(exe in running_processes for exe in game_exes):
                     start_time = self.active_sessions[game_id]
