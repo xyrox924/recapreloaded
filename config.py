@@ -10,3 +10,4 @@ BANNERS_PATH = PROJECT_ROOT / "gui" / "banners"
 # individual files
 DB_PATH = DBS_PATH / "recap.db"
 ICON_PATH = ICONS_PATH / "favicon.ico"
+GAMETXT_PATH = PROJECT_ROOT / "game.txt"

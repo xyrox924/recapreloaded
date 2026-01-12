@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.current_game_banner_pixmap = None
         # sucks
         try:
-            with open("game.txt") as f:
+            with open(GAMETXT_PATH) as f:
                 last_game_id = int(f.readline())
                 if last_game_id:
                     for row in range(self.model.rowCount()):
@@ -499,7 +499,7 @@ class MainWindow(QMainWindow):
         self.tracker_thread.join(timeout=2)
 
         if self.current_game:
-            with open("game.txt", "w") as f:
+            with open(GAMETXT_PATH, "w") as f:
                 f.write(str(self.current_game.id))
 
 class Application(QApplication):

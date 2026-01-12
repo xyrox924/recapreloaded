@@ -130,7 +130,6 @@ class NotificationManager:
         return notification
     
     def _remove_notification(self, notification):
-        """Remove notification from active list"""
         if notification in self.active_notifications:
             self.active_notifications.remove(notification)
 
@@ -139,14 +138,12 @@ class NotificationManager:
 _notification_manager = None
 
 def get_notification_manager():
-    """Get the global notification manager instance"""
     global _notification_manager
     if _notification_manager is None:
         _notification_manager = NotificationManager()
     return _notification_manager
 
 def notify(title, message, duration=5000):
-    """Convenience function to show a notification"""
     return get_notification_manager().show_notification(title, message, duration)
 
 
