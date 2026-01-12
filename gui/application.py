@@ -3,7 +3,7 @@ import os, sys, time, threading
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer, QSharedMemory
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction, QColor
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
 from utils import get_time_formatted, get_running_process_names
@@ -18,8 +18,8 @@ from config import *
 db = Database(str(DB_PATH)) # i don't like this being global anymore
 
 class TrackingSignals(QObject):
-    game_started = Signal(str)  # game_name
-    game_stopped = Signal(str)  # game_name
+    game_started = Signal(int, str)  # game_id, game_name
+    game_stopped = Signal(int, str)  # game_id, game_name
 
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
 class MainWindow(QMainWindow):
@@ -37,14 +37,25 @@ class MainWindow(QMainWindow):
             print("critical error can't start application")
             sys.exit(1)
 
-        self._setup_ui()
-
         os.makedirs(str(DBS_PATH), exist_ok=True)
         os.makedirs(str(BANNERS_PATH), exist_ok=True)
         os.makedirs(str(ICONS_PATH), exist_ok=True)
 
         self.current_game = None
         self.current_game_banner_pixmap = None
+
+        self.tracking_signals = TrackingSignals()
+        self.tracking_signals.game_started.connect(self._on_game_started)
+        self.tracking_signals.game_stopped.connect(self._on_game_stopped)
+
+        self.active_sessions = {}
+        self.stop_event = threading.Event()
+        self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
+        self.tracker_thread.start()
+
+        self._setup_ui()
+        self._refresh_tree_view()
+
         # sucks
         try:
             with open(GAMETXT_PATH) as f:
@@ -62,17 +73,6 @@ class MainWindow(QMainWindow):
             print("Last game_id in game.txt not a number. File tampering?")
         except FileNotFoundError:
             print("Last game game.txt file doesn't exist yet.")
-
-        self.tracking_signals = TrackingSignals()
-        self.tracking_signals.game_started.connect(self._on_game_started)
-        self.tracking_signals.game_stopped.connect(self._on_game_stopped)
-
-        self.active_sessions = {}
-        self.stop_event = threading.Event()
-        self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
-        self.tracker_thread.start()
-        
-        self._refresh_tree_view()
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
@@ -366,9 +366,6 @@ class MainWindow(QMainWindow):
                 child.setData(game[0], Qt.UserRole) # type: ignore
                 self.root.appendRow(child)
 
-                if self.active_sessions:
-                    print(self.active_sessions)
-
     def _refresh_game_banner(self):
         if self.current_game is not None and self.current_game.banner_path is not None:
                 if self.current_game_banner_pixmap is None or self.current_game_banner_pixmap.isNull():
@@ -425,7 +422,7 @@ class MainWindow(QMainWindow):
                     game = db.get_game(game_id)
                     # None checking should be safe to ignore don't care
                     print(f"Started tracking game {game.name}") # type: ignore
-                    signals.game_started.emit(game.name) # type: ignore
+                    signals.game_started.emit(game_id, game.name) # type: ignore
 
             for game_id in list(self.active_sessions.keys()):
                 # check if ANY exe for this game is still running
@@ -440,15 +437,27 @@ class MainWindow(QMainWindow):
                     game = db.get_game(game_id)
                     # None checking here too should be safe to ignore don't care
                     print(f"Ended tracking game {game.name}") # type: ignore # should be safe to ignore too don't care also
-                    signals.game_stopped.emit(game.name) # type: ignore
+                    signals.game_stopped.emit(game_id, game.name) # type: ignore
 
             time.sleep(10)
 
     # signal handlers
-    def _on_game_started(self, game_name):
+    def _on_game_started(self, game_id, game_name):
+        for row in range(self.model.rowCount()):
+            item = self.model.item(row)
+            if item and item.data(Qt.UserRole) == game_id: # type: ignore
+                item.setForeground(QColor("#658076"))
+                break
+
         notify("Now playing", game_name)
 
-    def _on_game_stopped(self, game_name):
+    def _on_game_stopped(self, game_id, game_name):
+        for row in range(self.model.rowCount()):
+            item = self.model.item(row)
+            if item and item.data(Qt.UserRole) == game_id: # type: ignore
+                item.setForeground(QColor("#E4E8E7"))
+                break
+
         notify("Stopped playing", game_name)
 
     # on events
