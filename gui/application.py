@@ -1,10 +1,8 @@
-import os
-import time
-import threading
+import os, sys, time, threading
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer, QSharedMemory
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
@@ -17,7 +15,7 @@ from gui.notification import notify
 
 from config import *
 
-db = Database(str(DB_PATH))
+db = Database(str(DB_PATH)) # i don't like this being global anymore
 
 class TrackingSignals(QObject):
     game_started = Signal(str)  # game_name
@@ -27,8 +25,19 @@ class TrackingSignals(QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        # single instance only
+        self._memory = QSharedMemory("recap_rebooted_singleton_key")
+        
+        if self._memory.attach():
+            print("another instance is already running")
+            sys.exit(0)
+        
+        if not self._memory.create(1):
+            print("critical error can't start application")
+            sys.exit(1)
+
         self._setup_ui()
-        self._refresh_tree_view()
 
         os.makedirs(str(DBS_PATH), exist_ok=True)
         os.makedirs(str(BANNERS_PATH), exist_ok=True)
@@ -62,6 +71,8 @@ class MainWindow(QMainWindow):
         self.stop_event = threading.Event()
         self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
         self.tracker_thread.start()
+        
+        self._refresh_tree_view()
 
     def _setup_ui(self):
         self.setWindowTitle("recap rebooted")
@@ -354,6 +365,9 @@ class MainWindow(QMainWindow):
                 # game id
                 child.setData(game[0], Qt.UserRole) # type: ignore
                 self.root.appendRow(child)
+
+                if self.active_sessions:
+                    print(self.active_sessions)
 
     def _refresh_game_banner(self):
         if self.current_game is not None and self.current_game.banner_path is not None:
