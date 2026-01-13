@@ -8,3 +8,5 @@ database/__pycache__
 *.png
 game.txt
 gui/banners
+run.bat
+main.pyw

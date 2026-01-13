@@ -284,6 +284,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover {
                 color: #658076;
+                border: none;
             }
         """)
         self.settings_btn.clicked.connect(self._settings_btn_on_clicked)
@@ -311,12 +312,16 @@ class MainWindow(QMainWindow):
         self.last_time_played_label = QLabel("last played: ")
         self.last_time_played_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
 
+        self.avg_time_played_label = QLabel("average time played a day: ")
+        self.avg_time_played_label.setStyleSheet("color: white; font-size: 14pt; font-weight: normal;")
+
         self.stat_layout.addLayout(self.title_settings_row)
         self.stat_layout.addWidget(self.dev_label)
         self.stat_layout.addWidget(self.notes_label)
         self.stat_layout.addWidget(self.time_played_label)
         self.stat_layout.addWidget(self.first_time_played_label)
         self.stat_layout.addWidget(self.last_time_played_label)
+        self.stat_layout.addWidget(self.avg_time_played_label)
 
         self.blur_transition = BlurTransition(min_height=140, max_height=900, bg_color="#2C2C2C")
 
@@ -407,6 +412,7 @@ class MainWindow(QMainWindow):
             self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(self.current_game.id))}")
             self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(self.current_game.id)}")
             self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(self.current_game.id)}")
+            self.avg_time_played_label.setText(f"average time played a day: {get_time_formatted(db.get_average_playtime_day(self.current_game.id))}")
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
@@ -447,6 +453,7 @@ class MainWindow(QMainWindow):
             item = self.model.item(row)
             if item and item.data(Qt.UserRole) == game_id: # type: ignore
                 item.setForeground(QColor("#658076"))
+                item.setText(game_name + " - Running")
                 break
 
         notify("Now playing", game_name)
@@ -456,6 +463,7 @@ class MainWindow(QMainWindow):
             item = self.model.item(row)
             if item and item.data(Qt.UserRole) == game_id: # type: ignore
                 item.setForeground(QColor("#E4E8E7"))
+                item.setText(game_name)
                 break
 
         notify("Stopped playing", game_name)
@@ -466,18 +474,18 @@ class MainWindow(QMainWindow):
         self._refresh_game_banner()
 
         # the hitler strikes again
-        if hasattr(self, 'blur_transition') and hasattr(self, 'stats_wrapper') and hasattr(self, 'content_bottom'):
-            # get the actual width and the blur's current height (set by set_proportional_height)
-            width = self.content_bottom.width()
-            blur_height = self.blur_transition.current_height  # Use the proportional height!
-            
-            # position blur at top with its proportional height
-            self.blur_transition.setGeometry(0, 0, width, blur_height)
-            
-            # stats wrapper overlays from top, extending to bottom
-            bottom_height = max(self.content_bottom.height(), 400)
-            self.stats_wrapper.setGeometry(0, 0, width, bottom_height)
-            self.stats_wrapper.raise_()  # ensure stats are on top i hate this
+        #if hasattr(self, 'blur_transition') and hasattr(self, 'stats_wrapper') and hasattr(self, 'content_bottom'):
+        # get the actual width and the blur's current height (set by set_proportional_height)
+        width = self.content_bottom.width()
+        blur_height = self.blur_transition.current_height  # Use the proportional height!
+        
+        # position blur at top with its proportional height
+        self.blur_transition.setGeometry(0, -1, width, blur_height + 1) # -1 and +1 so the banner and blur overlap just a tiny bit because qt rounding when moving widgets makes a 1px gap between them sometimes on resize
+        
+        # stats wrapper overlays from top, extending to bottom
+        bottom_height = max(self.content_bottom.height(), 400)
+        self.stats_wrapper.setGeometry(0, 0, width, bottom_height)
+        self.stats_wrapper.raise_()  # ensure stats are on top i hate this
 
     def _tree_on_selection_changed(self, selected):
         # get the game

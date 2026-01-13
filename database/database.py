@@ -281,6 +281,35 @@ class Database:
             if conn:
                 conn.close() # type: ignore
 
+    def get_average_playtime_day(self, game_id):
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT 
+                    SUM(julianday(end_time) - julianday(start_time)) * 86400 as total_seconds,
+                    COUNT(DISTINCT DATE(start_time)) as unique_days
+                FROM sessions 
+                WHERE game_id = ?
+            """, (game_id,))
+
+            result = cur.fetchone()
+
+            if result and result[0] is not None and result[1] is not None and result[1] > 0:
+                total_seconds = result[0]
+                unique_days = result[1]
+
+                return float(total_seconds / unique_days)
+            return 0
+        except sqlite3.Error:
+            print(f"Something went wrong getting average playtime per day.")
+            return 0 # or None? change the 0 to None in the playtime method too then
+        finally:
+            if conn:
+                conn.close() # type: ignore
+
     def insert_session(self, game_id, start_time, end_time):
         conn = None
         try:
