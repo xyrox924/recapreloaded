@@ -19,7 +19,8 @@ class NotificationWidget(QWidget):
             QWidget {
                 background-color: #2C2D2C;
                 border: 1px solid #658076;
-                border-radius: 4px;
+                border-bottom: none;
+                /*border-radius: 4px;*/
             }
         """)
         
@@ -86,8 +87,8 @@ class NotificationWidget(QWidget):
     def position_notification(self):
         screen = QScreen.availableGeometry(self.screen())
         
-        x = screen.width() - self.width() - 20
-        y = screen.height() - self.height() - 60
+        x = screen.width() - self.width()
+        y = screen.height() - self.height()
         
         self.move(x, y)
     
@@ -107,14 +108,13 @@ class NotificationWidget(QWidget):
 class NotificationManager:    
     def __init__(self):
         self.active_notifications = []
-        self.notification_spacing = 8
+        self.notification_spacing = 0
     
     def show_notification(self, title, message, duration=3000):
         notification = NotificationWidget(title, message)
         
-        # position based on existing notifications
+        # stack above the topmost notification
         if self.active_notifications:
-            # Stack above the topmost notification
             topmost = self.active_notifications[-1]
             new_y = topmost.y() - notification.height() - self.notification_spacing
             notification.move(topmost.x(), new_y)

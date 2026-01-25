@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
                 height: 2px;
             }
         """)
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
 
         # left side
         self.tree_container = QWidget()
@@ -350,6 +351,7 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.tree_container)
         self.splitter.addWidget(self.content_container)
 
+        self.splitter.setChildrenCollapsible(False)
         self.splitter.setCollapsible(0, False)  # index 0 = left widget (tree), i don't want it to close
         self.splitter.setStretchFactor(1, 1)  # content expands
 
@@ -486,6 +488,10 @@ class MainWindow(QMainWindow):
         bottom_height = max(self.content_bottom.height(), 400)
         self.stats_wrapper.setGeometry(0, 0, width, bottom_height)
         self.stats_wrapper.raise_()  # ensure stats are on top i hate this
+
+    def _on_splitter_moved(self, pos, index):
+        self._refresh_game_banner()
+        self.resizeEvent(None)
 
     def _tree_on_selection_changed(self, selected):
         # get the game
