@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QT
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction, QColor
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
 
-from utils import get_time_formatted, get_running_process_names
+from utils import get_time_formatted, get_running_process_names, add_to_startup, remove_from_startup, is_in_startup
 from database.database import Database
 from gui.addgamedialog import AddGameDialog
 from gui.settingsdialog import SettingsDialog
@@ -55,6 +55,11 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._refresh_tree_view()
+
+        if is_in_startup(regkey_name):
+            self.startup_btn.setIcon(self.win1_icon)
+        else:
+            self.startup_btn.setIcon(self.win2_icon)
 
         # sucks
         try:
@@ -227,6 +232,25 @@ class MainWindow(QMainWindow):
 
         self.search_bar.textChanged.connect(self.proxy_model.setFilterFixedString)
 
+        self.startup_btn = QPushButton()
+        self.startup_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2D2C;
+                color: white;
+                border: none;
+                margin: 2px;
+
+            }
+            QPushButton:hover {
+                background-color: #5C6C66;
+            }
+        """)
+        self.startup_btn.setFixedSize(32, 32)
+        self.win1_icon = QIcon(str(WIN1_ICON_PATH))
+        self.win2_icon = QIcon(str(WIN2_ICON_PATH))
+        self.startup_btn.setIcon(self.win1_icon)
+        self.startup_btn.clicked.connect(self._startup_btn_on_clicked)
+
         self.add_btn = QPushButton()
         self.add_btn.setText("+ add game")
         self.add_btn.setStyleSheet("""
@@ -242,9 +266,13 @@ class MainWindow(QMainWindow):
         """)
         self.add_btn.clicked.connect(self._add_btn_on_clicked)
 
+        self.add_btn_other_layout = QHBoxLayout()
+        self.add_btn_other_layout.addWidget(self.startup_btn)
+        self.add_btn_other_layout.addWidget(self.add_btn)
+
         self.tree_layout.addWidget(self.search_bar)
         self.tree_layout.addWidget(self.tree)
-        self.tree_layout.addWidget(self.add_btn)
+        self.tree_layout.addLayout(self.add_btn_other_layout)
 
         # right side
         self.content_container = QWidget()
@@ -520,7 +548,15 @@ class MainWindow(QMainWindow):
                 self.current_game = settings_dialog.get_game_data()
                 db.update_game(self.current_game)
                 self._refresh_game_content()
-            
+
+    def _startup_btn_on_clicked(self):
+        if not is_in_startup(regkey_name):
+            self.startup_btn.setIcon(self.win1_icon)
+            add_to_startup(regkey_name)
+        else:
+            self.startup_btn.setIcon(self.win2_icon)
+            remove_from_startup(regkey_name)
+
     def _add_btn_on_clicked(self):
         add_game_dialog = AddGameDialog()
         if add_game_dialog.exec():
@@ -573,7 +609,7 @@ class Application(QApplication):
 
         self.tray.setContextMenu(self.menu)
         
-        self.win.show()
+        #self.win.show()
 
     # event on whatevers
     def _on_about_to_quit(self):
