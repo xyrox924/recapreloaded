@@ -1,0 +1,1 @@
+pyinstaller --icon="gui/icons/favicon.ico" --name="recap reloaded" --windowed main.py

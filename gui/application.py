@@ -620,6 +620,8 @@ class Application(QApplication):
 
     def _tray_on_clicked(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            QTimer.singleShot(0, self.win._refresh_game_banner) # i want to remove this
+            QTimer.singleShot(10, lambda: self.win.resizeEvent(None)) # and this
             self.win.show()
             self.win.raise_()  # bring to front
             self.win.activateWindow()  # focus it
