@@ -1,21 +1,20 @@
-import os, sys, time, threading
+import os, sys, threading
 
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer, QSharedMemory
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction, QColor
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu, QMessageBox
 
-from utils import get_time_formatted, get_running_process_names, add_to_startup, remove_from_startup, is_in_startup
-from database.database import Database
+from utils import get_time_formatted, get_running_processes, normalize_exe_path
+from win_utils import add_to_startup, remove_from_startup, is_in_startup
+from database.database import Database, DatabaseError
 from gui.addgamedialog import AddGameDialog
 from gui.settingsdialog import SettingsDialog
 from gui.blurtransition import BlurTransition
 from gui.notification import notify
 
 from config import *
-
-db = Database(str(DB_PATH)) # i don't like this being global anymore
 
 class TrackingSignals(QObject):
     game_started = Signal(int, str)  # game_id, game_name
@@ -40,6 +39,7 @@ class MainWindow(QMainWindow):
         os.makedirs(str(DBS_PATH), exist_ok=True)
         os.makedirs(str(BANNERS_PATH), exist_ok=True)
         os.makedirs(str(ICONS_PATH), exist_ok=True)
+        self.db = Database(str(DB_PATH))
 
         self.current_game = None
         self.current_game_banner_pixmap = None
@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         self.tracking_signals.game_stopped.connect(self._on_game_stopped)
 
         self.active_sessions = {}
+        self.active_sessions_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
         self.tracker_thread.start()
@@ -72,7 +73,7 @@ class MainWindow(QMainWindow):
                             source_index = self.model.indexFromItem(item)
                             proxy_index = self.proxy_model.mapFromSource(source_index)
                             self.tree.setCurrentIndex(proxy_index)
-                            self.current_game = db.get_game(last_game_id)
+                            self.current_game = self.db.get_game(last_game_id)
                             break
         except ValueError:
             print("Last game_id in game.txt not a number. File tampering?")
@@ -392,7 +393,7 @@ class MainWindow(QMainWindow):
     def _refresh_tree_view(self):
         self.model.removeRows(0, self.model.rowCount())
 
-        games = db.get_all_games()
+        games = self.db.get_all_games()
         if games:
             for game in games:
                 child = QStandardItem(game[1])
@@ -439,43 +440,64 @@ class MainWindow(QMainWindow):
             self.title_label.setText(self.current_game.name)
             self.dev_label.setText(self.current_game.developer)
             self.notes_label.setText(self.current_game.notes)
-            self.time_played_label.setText(f"total time played: {get_time_formatted(db.get_game_playtime(self.current_game.id))}")
-            self.first_time_played_label.setText(f"first time played: {db.get_game_first_time(self.current_game.id)}")
-            self.last_time_played_label.setText(f"last time played: {db.get_game_last_time(self.current_game.id)}")
-            self.avg_time_played_label.setText(f"average time played a day: {get_time_formatted(db.get_average_playtime_day(self.current_game.id))}")
+            self.time_played_label.setText(f"total time played: {get_time_formatted(self.db.get_game_playtime(self.current_game.id))}")
+            self.first_time_played_label.setText(f"first time played: {self.db.get_game_first_time(self.current_game.id)}")
+            self.last_time_played_label.setText(f"last time played: {self.db.get_game_last_time(self.current_game.id)}")
+            self.avg_time_played_label.setText(f"average time played a day: {get_time_formatted(self.db.get_average_playtime_day(self.current_game.id))}")
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
+    def _get_running_game_ids(self, running_names, running_paths, known_exes):
+        exe_name_game_ids = {}
+        for known_exe in known_exes:
+            exe_name = known_exe["exe_name"]
+            exe_name_game_ids.setdefault(exe_name, set()).add(known_exe["game_id"])
+
+        running_game_ids = set()
+        for known_exe in known_exes:
+            full_path = known_exe["full_path"]
+            exe_name = known_exe["exe_name"]
+
+            if full_path and normalize_exe_path(full_path) in running_paths:
+                running_game_ids.add(known_exe["game_id"])
+            elif len(exe_name_game_ids.get(exe_name, set())) == 1 and exe_name in running_names:
+                running_game_ids.add(known_exe["game_id"])
+
+        return running_game_ids
+
     def _tracking_loop(self, signals):
         while not self.stop_event.is_set():
-            running_processes = get_running_process_names()
-            known_exes = db.get_known_executables()
+            running_names, running_paths = get_running_processes()
+            known_exes = self.db.get_known_executables()
+            running_game_ids = self._get_running_game_ids(running_names, running_paths, known_exes)
 
-            for exe_name, game_id in known_exes.items():
-                if exe_name in running_processes and game_id not in self.active_sessions:
-                    self.active_sessions[game_id] = datetime.now()
+            started_game_ids = []
+            stopped_sessions = []
 
-                    game = db.get_game(game_id)
-                    # None checking should be safe to ignore don't care
-                    print(f"Started tracking game {game.name}") # type: ignore
-                    signals.game_started.emit(game_id, game.name) # type: ignore
+            with self.active_sessions_lock:
+                for game_id in running_game_ids:
+                    if game_id not in self.active_sessions:
+                        self.active_sessions[game_id] = datetime.now()
+                        started_game_ids.append(game_id)
 
-            for game_id in list(self.active_sessions.keys()):
-                # check if ANY exe for this game is still running
-                game_exes = [exe for exe, gid in known_exes.items() if gid == game_id]
-                if not any(exe in running_processes for exe in game_exes):
-                    start_time = self.active_sessions[game_id]
-                    end_time = datetime.now()
-                    
-                    db.insert_session(game_id, start_time, end_time)
-                    del self.active_sessions[game_id]
-                    
-                    game = db.get_game(game_id)
-                    # None checking here too should be safe to ignore don't care
-                    print(f"Ended tracking game {game.name}") # type: ignore # should be safe to ignore too don't care also
-                    signals.game_stopped.emit(game_id, game.name) # type: ignore
+                for game_id in list(self.active_sessions.keys()):
+                    if game_id not in running_game_ids:
+                        stopped_sessions.append((game_id, self.active_sessions.pop(game_id), datetime.now()))
 
-            time.sleep(10)
+            for game_id in started_game_ids:
+                game = self.db.get_game(game_id)
+                if game is not None:
+                    print(f"Started tracking game {game.name}")
+                    signals.game_started.emit(game_id, game.name)
+
+            for game_id, start_time, end_time in stopped_sessions:
+                self.db.insert_session(game_id, start_time, end_time)
+                game = self.db.get_game(game_id)
+                if game is not None:
+                    print(f"Ended tracking game {game.name}")
+                    signals.game_stopped.emit(game_id, game.name)
+
+            self.stop_event.wait(10)
 
     # signal handlers
     def _on_game_started(self, game_id, game_name):
@@ -535,19 +557,25 @@ class MainWindow(QMainWindow):
             return
         
         game_id = item.data(Qt.UserRole) # type: ignore
-        self.current_game = db.get_game(game_id)
+        self.current_game = self.db.get_game(game_id)
 
         self._refresh_game_content()
             
     def _settings_btn_on_clicked(self):
         if self.current_game is not None:
-            self.current_game = db.get_game_full(self.current_game.id) # type: ignore
+            self.current_game = self.db.get_game_full(self.current_game.id) # type: ignore
             # it gets the literal same exact game from the database no way this should ever fail
             settings_dialog = SettingsDialog(self.current_game) # type: ignore
-            if settings_dialog.exec():
-                self.current_game = settings_dialog.get_game_data()
-                db.update_game(self.current_game)
-                self._refresh_game_content()
+            while settings_dialog.exec():
+                updated_game = settings_dialog.get_game_data()
+                try:
+                    self.db.update_game(updated_game)
+                    self.current_game = updated_game
+                    self._refresh_game_content()
+                    self._refresh_tree_view()
+                    break
+                except DatabaseError as e:
+                    self._show_database_error(str(e), settings_dialog)
 
     def _startup_btn_on_clicked(self):
         if not is_in_startup(regkey_name):
@@ -559,21 +587,32 @@ class MainWindow(QMainWindow):
 
     def _add_btn_on_clicked(self):
         add_game_dialog = AddGameDialog()
-        if add_game_dialog.exec():
+        while add_game_dialog.exec():
             game = add_game_dialog.get_game_data()
-            db.insert_game(game)
-            self._refresh_tree_view()
+            try:
+                self.db.insert_game(game)
+                self._refresh_tree_view()
+                break
+            except DatabaseError as e:
+                self._show_database_error(str(e), add_game_dialog)
 
     def cleanup(self):
-        for game_id, start_time in self.active_sessions.items():
-            db.insert_session(game_id, start_time, datetime.now())
-        
         self.stop_event.set()
-        self.tracker_thread.join(timeout=2)
+        self.tracker_thread.join(timeout=12)
+
+        with self.active_sessions_lock:
+            active_sessions = list(self.active_sessions.items())
+            self.active_sessions.clear()
+
+        for game_id, start_time in active_sessions:
+            self.db.insert_session(game_id, start_time, datetime.now())
 
         if self.current_game:
             with open(GAMETXT_PATH, "w") as f:
                 f.write(str(self.current_game.id))
+
+    def _show_database_error(self, message, parent=None):
+        QMessageBox.warning(parent or self, "Could not save", message)
 
 class Application(QApplication):
     def __init__(self):

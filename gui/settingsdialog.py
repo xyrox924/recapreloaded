@@ -267,13 +267,14 @@ class SettingsDialog(QDialog):
         
     def add_executable_entry(self, path=""):
         entry = ExecutableEntry()
-        #entry.remove_btn.clicked.connect(lambda: self.remove_executable_entry(entry))
+        entry.remove_btn.clicked.connect(lambda: self.remove_executable_entry(entry))
         if path:
             entry.set_path(path)
         self.executables_layout.addWidget(entry)
 
     def remove_executable_entry(self, entry):
         if self.executables_layout.count() > 1:
+            self.executables_layout.removeWidget(entry)
             entry.deleteLater()
 
     def get_game_data(self):

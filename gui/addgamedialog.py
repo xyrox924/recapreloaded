@@ -249,6 +249,7 @@ class AddGameDialog(QDialog):
 
     def remove_executable_entry(self, entry):
         if self.executables_layout.count() > 1:
+            self.executables_layout.removeWidget(entry)
             entry.deleteLater()
 
     def get_game_data(self):

@@ -4,6 +4,10 @@ from pathlib import Path
 from datetime import datetime
 
 from database.models import *
+from utils import normalize_exe_path
+
+class DatabaseError(Exception):
+    pass
 
 class Database:
     def __init__(self, db_path: str):
@@ -14,6 +18,7 @@ class Database:
         try:
             # i'm just closing and opening the connections for everything i do, maybe this isn't right and i should keep one always open
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA foreign_keys = ON")
             cur = conn.cursor()
 
             cur.execute("""
@@ -53,11 +58,50 @@ class Database:
                 print(f"Database at {self.db_path}")
                 conn.close() # type: ignore
 
+    def _connect(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+    def _validate_game(self, game: Game):
+        if not game.name.strip():
+            raise DatabaseError("Game name is required.")
+
+        seen_paths = set()
+        for exe in game.executables:
+            normalized_path = normalize_exe_path(exe.path)
+            if normalized_path in seen_paths:
+                raise DatabaseError("The same executable is listed more than once.")
+            seen_paths.add(normalized_path)
+
+    def _validate_executables_available(self, cur, game: Game):
+        cur.execute("SELECT game_id, full_path FROM executables")
+        existing_paths = {
+            normalize_exe_path(full_path): game_id
+            for game_id, full_path in cur.fetchall()
+            if full_path
+        }
+
+        for exe in game.executables:
+            existing_game_id = existing_paths.get(normalize_exe_path(exe.path))
+            if existing_game_id is not None and existing_game_id != game.id:
+                raise DatabaseError("That executable is already assigned to another game.")
+
+    def _raise_integrity_error(self, error: sqlite3.IntegrityError):
+        message = str(error).lower()
+        if "games.name" in message:
+            raise DatabaseError("A game with that name already exists.") from error
+        if "executables.full_path" in message:
+            raise DatabaseError("That executable is already assigned to another game.") from error
+        raise DatabaseError("The database rejected the change.") from error
+
     def insert_game(self, game: Game) -> Game:
+        self._validate_game(game)
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
+            self._validate_executables_available(cur, game)
             
             cur.execute("INSERT INTO games (name, developer, notes, banner_file) VALUES (?, ?, ?, ?)", 
                     (game.name, game.developer, game.notes, game.banner_path))
@@ -65,24 +109,32 @@ class Database:
             
             for exe in game.executables:
                 cur.execute("INSERT INTO executables (game_id, exe_name, full_path) VALUES (?, ?, ?)",
-                        (game.id, Path(exe.path).name, exe.path))
+                        (game.id, Path(exe.path).name, normalize_exe_path(exe.path)))
                 exe.game_id = game.id
                 exe.id = cur.lastrowid
             
             conn.commit()
             return game
+        except sqlite3.IntegrityError as e:
+            if conn:
+                conn.rollback()
+            self._raise_integrity_error(e)
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"Error inserting game: {e}")
-            raise
+            raise DatabaseError("Could not save the game.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
 
     def update_game(self, game: Game) -> Game:
+        self._validate_game(game)
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
+            self._validate_executables_available(cur, game)
             
             cur.execute("""UPDATE games 
                         SET name = ?, developer = ?, notes = ?, banner_file = ?
@@ -96,15 +148,21 @@ class Database:
             for exe in game.executables:
                 cur.execute("""INSERT INTO executables (game_id, exe_name, full_path) 
                             VALUES (?, ?, ?)""",
-                            (game.id, Path(exe.path).name, exe.path))
+                            (game.id, Path(exe.path).name, normalize_exe_path(exe.path)))
                 exe.game_id = game.id
                 exe.id = cur.lastrowid
             
             conn.commit()
             return game
+        except sqlite3.IntegrityError as e:
+            if conn:
+                conn.rollback()
+            self._raise_integrity_error(e)
         except sqlite3.Error as e:
+            if conn:
+                conn.rollback()
             print(f"error updating game: {e}")
-            raise
+            raise DatabaseError("Could not save the game settings.") from e
         finally:
             if conn:
                 conn.close()  # type: ignore
@@ -112,7 +170,7 @@ class Database:
     def get_game(self, game_id: int):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("SELECT name, developer, notes, banner_file FROM games WHERE id = ?", (game_id,))
@@ -141,7 +199,7 @@ class Database:
     def get_game_full(self, game_id: int):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("SELECT name, developer, notes, banner_file FROM games WHERE id = ?", (game_id,))
@@ -191,7 +249,7 @@ class Database:
     def get_all_games(self):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("SELECT id, name FROM games")
@@ -212,7 +270,7 @@ class Database:
     def get_game_playtime(self, game_id) -> int:
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("""
@@ -234,7 +292,7 @@ class Database:
     def get_game_first_time(self, game_id):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("""
@@ -259,7 +317,7 @@ class Database:
     def get_game_last_time(self, game_id):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("""
@@ -284,7 +342,7 @@ class Database:
     def get_average_playtime_day(self, game_id):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("""
@@ -313,7 +371,7 @@ class Database:
     def insert_session(self, game_id, start_time, end_time):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
 
             cur.execute("INSERT INTO sessions (game_id, start_time, end_time) VALUES (?, ?, ?)",
@@ -329,18 +387,24 @@ class Database:
     def get_known_executables(self):
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._connect()
             cur = conn.cursor()
             
-            cur.execute("SELECT exe_name, game_id FROM executables")
+            cur.execute("SELECT game_id, exe_name, full_path FROM executables")
             rows = cur.fetchall()
             
-            # return as dict: exe_name -> game_id
-            return {row[0].lower(): row[1] for row in rows}
+            return [
+                {
+                    "game_id": row[0],
+                    "exe_name": row[1].lower(),
+                    "full_path": normalize_exe_path(row[2]) if row[2] else "",
+                }
+                for row in rows
+            ]
         
         except sqlite3.Error as e:
             print(f"Error getting executables: {e}")
-            return {}
+            return []
         finally:
             if conn:
                 conn.close()
