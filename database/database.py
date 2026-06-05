@@ -69,6 +69,9 @@ class Database:
 
         seen_paths = set()
         for exe in game.executables:
+            if not Path(exe.path).is_file():
+                raise DatabaseError("Selected executable file does not exist.")
+
             normalized_path = normalize_exe_path(exe.path)
             if normalized_path in seen_paths:
                 raise DatabaseError("The same executable is listed more than once.")
