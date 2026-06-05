@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-from database.models import *
+from database.models import Executable, Game
 from utils import normalize_exe_path
 
 class DatabaseError(Exception):
@@ -50,9 +50,9 @@ class Database:
             """)
 
             conn.commit()
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print("Something went wrong while creating the database")
-            raise # just crash everything because idk at this point
+            raise DatabaseError("Could not initialize the database.") from e
         finally:
             if conn:
                 print(f"Database at {self.db_path}")
@@ -189,9 +189,9 @@ class Database:
                 banner_path=game_row[3]
             )
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting a game. ID is {game_id}")
-            return None
+            raise DatabaseError("Could not load the game.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -228,7 +228,7 @@ class Database:
 
             executable_list = []
             for exe in exe_rows:
-                executable_list.append(exe[0])
+                executable_list.append(Executable(path=exe[0]))
             
             return Game(
                 id=game_id,
@@ -239,9 +239,9 @@ class Database:
                 banner_path=game_row[3]
             )
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting a game. ID is {game_id}")
-            return None
+            raise DatabaseError("Could not load the game settings.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -254,15 +254,11 @@ class Database:
 
             cur.execute("SELECT id, name FROM games")
 
-            game_row = cur.fetchall()
-            if not game_row:
-                return None
-            
-            return game_row
+            return cur.fetchall()
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting all games.")
-            return None
+            raise DatabaseError("Could not load the game list.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -282,9 +278,9 @@ class Database:
             total_seconds = cur.fetchone()[0] or 0 # maybe or 0 i don't need it idk
             return int(total_seconds)
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting all games.")
-            return 0
+            raise DatabaseError("Could not load playtime.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -307,9 +303,9 @@ class Database:
                 return "never"
             return datetime.fromisoformat(first_time).strftime("%B %d, %Y")
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting all games.")
-            return None
+            raise DatabaseError("Could not load first played date.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -332,9 +328,9 @@ class Database:
                 return "never"
             return datetime.fromisoformat(last_time).strftime("%B %d, %Y")
 
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while getting all games.")
-            return None
+            raise DatabaseError("Could not load last played date.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -361,9 +357,9 @@ class Database:
 
                 return float(total_seconds / unique_days)
             return 0
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong getting average playtime per day.")
-            return 0 # or None? change the 0 to None in the playtime method too then
+            raise DatabaseError("Could not load average playtime.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -377,9 +373,9 @@ class Database:
             cur.execute("INSERT INTO sessions (game_id, start_time, end_time) VALUES (?, ?, ?)",
                         (game_id, start_time, end_time))
             conn.commit() # i always forget this somehow
-        except sqlite3.Error:
+        except sqlite3.Error as e:
             print(f"Something went wrong while writing session.")
-            return None
+            raise DatabaseError("Could not save play session.") from e
         finally:
             if conn:
                 conn.close() # type: ignore
@@ -404,7 +400,7 @@ class Database:
         
         except sqlite3.Error as e:
             print(f"Error getting executables: {e}")
-            return []
+            raise DatabaseError("Could not load executable tracking data.") from e
         finally:
             if conn:
                 conn.close()

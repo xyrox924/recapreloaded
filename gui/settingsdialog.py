@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog, QMessageBox
 
-from database.models import *
+from database.models import Executable, Game
 from database.database import Database
 from gui.executableentry import ExecutableEntry
 
@@ -39,7 +39,7 @@ class SettingsDialog(QDialog):
         self.notes_edit.setText(game.notes)
 
         for exe in game.executables:
-            self.add_executable_entry(exe) # type: ignore
+            self.add_executable_entry(exe.path if isinstance(exe, Executable) else exe)
 
     def _setup_ui(self):
         self.setWindowTitle("game settings")

@@ -1,6 +1,7 @@
 import os, sys, threading
 
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer, QSharedMemory
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction, QColor
@@ -14,7 +15,17 @@ from gui.settingsdialog import SettingsDialog
 from gui.blurtransition import BlurTransition
 from gui.notification import notify
 
-from config import *
+from config import (
+    BANNERS_PATH,
+    DB_PATH,
+    DBS_PATH,
+    GAMETXT_PATH,
+    ICON_PATH,
+    ICONS_PATH,
+    WIN1_ICON_PATH,
+    WIN2_ICON_PATH,
+    regkey_name,
+)
 
 class TrackingSignals(QObject):
     game_started = Signal(int, str)  # game_id, game_name
@@ -73,7 +84,10 @@ class MainWindow(QMainWindow):
                             source_index = self.model.indexFromItem(item)
                             proxy_index = self.proxy_model.mapFromSource(source_index)
                             self.tree.setCurrentIndex(proxy_index)
-                            self.current_game = self.db.get_game(last_game_id)
+                            try:
+                                self.current_game = self.db.get_game(last_game_id)
+                            except DatabaseError as e:
+                                self._show_database_error(str(e))
                             break
         except ValueError:
             print("Last game_id in game.txt not a number. File tampering?")
@@ -391,9 +405,14 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(10, lambda: self.resizeEvent(None))
 
     def _refresh_tree_view(self):
+        try:
+            games = self.db.get_all_games()
+        except DatabaseError as e:
+            self._show_database_error(str(e))
+            return
+
         self.model.removeRows(0, self.model.rowCount())
 
-        games = self.db.get_all_games()
         if games:
             for game in games:
                 child = QStandardItem(game[1])
@@ -440,10 +459,14 @@ class MainWindow(QMainWindow):
             self.title_label.setText(self.current_game.name)
             self.dev_label.setText(self.current_game.developer)
             self.notes_label.setText(self.current_game.notes)
-            self.time_played_label.setText(f"total time played: {get_time_formatted(self.db.get_game_playtime(self.current_game.id))}")
-            self.first_time_played_label.setText(f"first time played: {self.db.get_game_first_time(self.current_game.id)}")
-            self.last_time_played_label.setText(f"last time played: {self.db.get_game_last_time(self.current_game.id)}")
-            self.avg_time_played_label.setText(f"average time played a day: {get_time_formatted(self.db.get_average_playtime_day(self.current_game.id))}")
+            try:
+                self.time_played_label.setText(f"total time played: {get_time_formatted(self.db.get_game_playtime(self.current_game.id))}")
+                self.first_time_played_label.setText(f"first time played: {self.db.get_game_first_time(self.current_game.id)}")
+                self.last_time_played_label.setText(f"last time played: {self.db.get_game_last_time(self.current_game.id)}")
+                self.avg_time_played_label.setText(f"average time played a day: {get_time_formatted(self.db.get_average_playtime_day(self.current_game.id))}")
+            except DatabaseError as e:
+                self._show_database_error(str(e))
+                return
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
@@ -468,7 +491,13 @@ class MainWindow(QMainWindow):
     def _tracking_loop(self, signals):
         while not self.stop_event.is_set():
             running_names, running_paths = get_running_processes()
-            known_exes = self.db.get_known_executables()
+            try:
+                known_exes = self.db.get_known_executables()
+            except DatabaseError as e:
+                print(e)
+                self.stop_event.wait(10)
+                continue
+
             running_game_ids = self._get_running_game_ids(running_names, running_paths, known_exes)
 
             started_game_ids = []
@@ -485,14 +514,30 @@ class MainWindow(QMainWindow):
                         stopped_sessions.append((game_id, self.active_sessions.pop(game_id), datetime.now()))
 
             for game_id in started_game_ids:
-                game = self.db.get_game(game_id)
+                try:
+                    game = self.db.get_game(game_id)
+                except DatabaseError as e:
+                    print(e)
+                    continue
                 if game is not None:
                     print(f"Started tracking game {game.name}")
                     signals.game_started.emit(game_id, game.name)
 
             for game_id, start_time, end_time in stopped_sessions:
-                self.db.insert_session(game_id, start_time, end_time)
-                game = self.db.get_game(game_id)
+                try:
+                    self.db.insert_session(game_id, start_time, end_time)
+                except DatabaseError as e:
+                    print(e)
+                    with self.active_sessions_lock:
+                        self.active_sessions.setdefault(game_id, start_time)
+                    continue
+
+                try:
+                    game = self.db.get_game(game_id)
+                except DatabaseError as e:
+                    print(e)
+                    continue
+
                 if game is not None:
                     print(f"Ended tracking game {game.name}")
                     signals.game_stopped.emit(game_id, game.name)
@@ -557,13 +602,24 @@ class MainWindow(QMainWindow):
             return
         
         game_id = item.data(Qt.UserRole) # type: ignore
-        self.current_game = self.db.get_game(game_id)
+        try:
+            self.current_game = self.db.get_game(game_id)
+        except DatabaseError as e:
+            self._show_database_error(str(e))
+            return
 
         self._refresh_game_content()
             
     def _settings_btn_on_clicked(self):
         if self.current_game is not None:
-            self.current_game = self.db.get_game_full(self.current_game.id) # type: ignore
+            try:
+                self.current_game = self.db.get_game_full(self.current_game.id) # type: ignore
+            except DatabaseError as e:
+                self._show_database_error(str(e))
+                return
+            if self.current_game is None:
+                self._show_database_error("Could not find the selected game.")
+                return
             # it gets the literal same exact game from the database no way this should ever fail
             settings_dialog = SettingsDialog(self.current_game) # type: ignore
             while settings_dialog.exec():
@@ -605,7 +661,10 @@ class MainWindow(QMainWindow):
             self.active_sessions.clear()
 
         for game_id, start_time in active_sessions:
-            self.db.insert_session(game_id, start_time, datetime.now())
+            try:
+                self.db.insert_session(game_id, start_time, datetime.now())
+            except DatabaseError as e:
+                print(e)
 
         if self.current_game:
             with open(GAMETXT_PATH, "w") as f:
