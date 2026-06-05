@@ -671,7 +671,37 @@ class MainWindow(QMainWindow):
                 f.write(str(self.current_game.id))
 
     def _show_database_error(self, message, parent=None):
-        QMessageBox.warning(parent or self, "Could not save", message)
+        dialog = QMessageBox(parent or self)
+        dialog.setWindowTitle("Database error")
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setText(message)
+        dialog.setStandardButtons(QMessageBox.Ok)
+        dialog.setStyleSheet("""
+            QMessageBox {
+                background-color: #2C2D2C;
+                color: #E4E8E7;
+                font-family: 'Raleway';
+                font-size: 10pt;
+            }
+            QMessageBox QLabel {
+                color: #E4E8E7;
+                background-color: transparent;
+            }
+            QPushButton {
+                background-color: #658076;
+                color: white;
+                border: none;
+                padding: 8px 18px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #859A92;
+            }
+            QPushButton:pressed {
+                background-color: #4C5C56;
+            }
+        """)
+        dialog.exec()
 
 class Application(QApplication):
     def __init__(self):

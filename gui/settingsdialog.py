@@ -40,6 +40,8 @@ class SettingsDialog(QDialog):
 
         for exe in game.executables:
             self.add_executable_entry(exe.path if isinstance(exe, Executable) else exe)
+        if self.executables_layout.count() == 0:
+            self.add_executable_entry()
 
     def _setup_ui(self):
         self.setWindowTitle("game settings")
@@ -273,9 +275,11 @@ class SettingsDialog(QDialog):
         self.executables_layout.addWidget(entry)
 
     def remove_executable_entry(self, entry):
-        if self.executables_layout.count() > 1:
-            self.executables_layout.removeWidget(entry)
-            entry.deleteLater()
+        self.executables_layout.removeWidget(entry)
+        entry.deleteLater()
+
+        if self.executables_layout.count() == 0:
+            self.add_executable_entry()
 
     def get_game_data(self):
         executables = []
