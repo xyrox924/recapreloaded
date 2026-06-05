@@ -3,8 +3,8 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-from database.models import Executable, Game
-from utils import normalize_exe_path
+from recap_reloaded.database.models import Executable, Game
+from recap_reloaded.utils import normalize_exe_path
 
 class DatabaseError(Exception):
     pass
@@ -69,8 +69,13 @@ class Database:
 
         seen_paths = set()
         for exe in game.executables:
-            if not Path(exe.path).is_file():
-                raise DatabaseError("Selected executable file does not exist.")
+            exe_path = Path(exe.path)
+            if not exe_path.exists():
+                raise DatabaseError(f"Executable does not exist: {exe.path}")
+            if not exe_path.is_file():
+                raise DatabaseError(f"Executable path is not a file: {exe.path}")
+            if exe_path.suffix.lower() != ".exe":
+                raise DatabaseError(f"Executable must be a .exe file: {exe.path}")
 
             normalized_path = normalize_exe_path(exe.path)
             if normalized_path in seen_paths:

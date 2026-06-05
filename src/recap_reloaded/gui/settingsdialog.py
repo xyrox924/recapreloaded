@@ -4,13 +4,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QIcon
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog
 
-from database.models import Executable, Game
-from database.database import Database
-from gui.executableentry import ExecutableEntry
+from recap_reloaded.database.models import Executable, Game
+from recap_reloaded.gui.executablelist import ExecutableListWidget
 
-from config import BANNERS_PATH
+from recap_reloaded.config import BANNERS_PATH
 
 class SettingsDialog(QDialog):
     def __init__(self, game: Game, parent=None):
@@ -39,9 +38,8 @@ class SettingsDialog(QDialog):
         self.notes_edit.setText(game.notes)
 
         for exe in game.executables:
-            self.add_executable_entry(exe.path if isinstance(exe, Executable) else exe)
-        if self.executables_layout.count() == 0:
-            self.add_executable_entry()
+            self.executables_container.add_executable_entry(exe.path if isinstance(exe, Executable) else exe)
+        self.executables_container.ensure_empty_entry()
 
     def _setup_ui(self):
         self.setWindowTitle("game settings")
@@ -193,11 +191,7 @@ class SettingsDialog(QDialog):
         exe_label = QLabel("executables")
         exe_label.setStyleSheet("font-size: 11pt; font-weight: bold;")
         
-        self.executables_container = QWidget()
-        self.executables_layout = QVBoxLayout(self.executables_container)
-        self.executables_layout.setAlignment(Qt.AlignTop) # type: ignore
-        self.executables_layout.setContentsMargins(0, 0, 0, 0)
-        self.executables_layout.setSpacing(10)
+        self.executables_container = ExecutableListWidget(add_empty_entry=False)
 
         add_exe_btn = QPushButton("+ add executable")
         add_exe_btn.setStyleSheet("""
@@ -212,7 +206,7 @@ class SettingsDialog(QDialog):
                 background-color: #859A92;
             }
         """)
-        add_exe_btn.clicked.connect(self.add_executable_entry)
+        add_exe_btn.clicked.connect(self.executables_container.add_executable_entry)
 
         # bottom buttons
         button_layout = QHBoxLayout()
@@ -267,33 +261,13 @@ class SettingsDialog(QDialog):
         layout.addWidget(scroll)
         layout.addLayout(button_layout)
         
-    def add_executable_entry(self, path=""):
-        entry = ExecutableEntry()
-        entry.remove_btn.clicked.connect(lambda: self.remove_executable_entry(entry))
-        if path:
-            entry.set_path(path)
-        self.executables_layout.addWidget(entry)
-
-    def remove_executable_entry(self, entry):
-        self.executables_layout.removeWidget(entry)
-        entry.deleteLater()
-
-        if self.executables_layout.count() == 0:
-            self.add_executable_entry()
-
     def get_game_data(self):
-        executables = []
-        for i in range(self.executables_layout.count()):
-            entry = self.executables_layout.itemAt(i).widget()
-            if isinstance(entry, ExecutableEntry) and entry.path_edit.text().strip():
-                executables.append(Executable(path=entry.path_edit.text().strip()))
-        
         return Game(
             id=self.game.id,
             name=self.name_edit.text().strip(),
             developer=self.developer_edit.text().strip(),
             notes=self.notes_edit.toPlainText().strip(),
-            executables=executables,
+            executables=self.executables_container.get_executables(),
             banner_path=self.banner_path
         )
     

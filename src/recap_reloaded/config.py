@@ -4,16 +4,16 @@ from pathlib import Path
 
 regkey_name = "recapreloaded"
 
-# paths from root
-# folders
 if getattr(sys, 'frozen', False): # for pyinstaller
     PROJECT_ROOT = Path(sys.executable).parent
+    PACKAGE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT)) / "recap_reloaded"
 else:
-    PROJECT_ROOT = Path(__file__).parent
+    PACKAGE_ROOT = Path(__file__).resolve().parent
+    PROJECT_ROOT = PACKAGE_ROOT.parents[1]
 
 DBS_PATH = PROJECT_ROOT / "database"
-ICONS_PATH = PROJECT_ROOT / "gui" / "icons"
 BANNERS_PATH = PROJECT_ROOT / "gui" / "banners"
+ICONS_PATH = PACKAGE_ROOT / "gui" / "icons"
 
 # individual files
 DB_PATH = DBS_PATH / "recap.db"

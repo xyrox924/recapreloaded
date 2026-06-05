@@ -1,51 +1,35 @@
-import os, sys, threading
+import os
 
-from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, Signal, QObject, QTimer, QSharedMemory
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QAction, QColor
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QSystemTrayIcon, QMenu, QMessageBox
+from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, QTimer
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QColor
+from PySide6.QtWidgets import QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QMessageBox
 
-from utils import get_time_formatted, get_running_processes, normalize_exe_path
-from win_utils import add_to_startup, remove_from_startup, is_in_startup
-from database.database import Database, DatabaseError
-from gui.addgamedialog import AddGameDialog
-from gui.settingsdialog import SettingsDialog
-from gui.blurtransition import BlurTransition
-from gui.notification import notify
+from recap_reloaded.utils import get_time_formatted
+from recap_reloaded.win_utils import add_to_startup, remove_from_startup, is_in_startup
+from recap_reloaded.database.database import Database, DatabaseError
+from recap_reloaded.gui.addgamedialog import AddGameDialog
+from recap_reloaded.gui.settingsdialog import SettingsDialog
+from recap_reloaded.gui.blurtransition import BlurTransition
+from recap_reloaded.gui.notification import notify
+from recap_reloaded.tracking.game_tracker import GameTracker
 
-from config import (
+from recap_reloaded.config import (
     BANNERS_PATH,
     DB_PATH,
     DBS_PATH,
     GAMETXT_PATH,
-    ICON_PATH,
     ICONS_PATH,
     WIN1_ICON_PATH,
     WIN2_ICON_PATH,
     regkey_name,
 )
 
-class TrackingSignals(QObject):
-    game_started = Signal(int, str)  # game_id, game_name
-    game_stopped = Signal(int, str)  # game_id, game_name
-
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-
-        # single instance only
-        self._memory = QSharedMemory("recap_rebooted_singleton_key")
-        
-        if self._memory.attach():
-            print("another instance is already running")
-            sys.exit(0)
-        
-        if not self._memory.create(1):
-            print("critical error can't start application")
-            sys.exit(1)
 
         os.makedirs(str(DBS_PATH), exist_ok=True)
         os.makedirs(str(BANNERS_PATH), exist_ok=True)
@@ -54,16 +38,12 @@ class MainWindow(QMainWindow):
 
         self.current_game = None
         self.current_game_banner_pixmap = None
+        self.cleanup_done = False
 
-        self.tracking_signals = TrackingSignals()
-        self.tracking_signals.game_started.connect(self._on_game_started)
-        self.tracking_signals.game_stopped.connect(self._on_game_stopped)
-
-        self.active_sessions = {}
-        self.active_sessions_lock = threading.Lock()
-        self.stop_event = threading.Event()
-        self.tracker_thread = threading.Thread(target=self._tracking_loop, args=(self.tracking_signals,), daemon=True)
-        self.tracker_thread.start()
+        self.tracker = GameTracker(self.db)
+        self.tracker.game_started.connect(self._on_game_started)
+        self.tracker.game_stopped.connect(self._on_game_stopped)
+        self.tracker.start()
 
         self._setup_ui()
         self._refresh_tree_view()
@@ -95,7 +75,7 @@ class MainWindow(QMainWindow):
             print("Last game game.txt file doesn't exist yet.")
 
     def _setup_ui(self):
-        self.setWindowTitle("recap rebooted")
+        self.setWindowTitle("recap reloaded")
         self.resize(1000, 640)
         self.setMinimumHeight(600)
 
@@ -470,80 +450,6 @@ class MainWindow(QMainWindow):
             self.current_game_banner_pixmap = None # clear the pixmap cause then it won't update if it isn't # why i did this
             self._refresh_game_banner()
 
-    def _get_running_game_ids(self, running_names, running_paths, known_exes):
-        exe_name_game_ids = {}
-        for known_exe in known_exes:
-            exe_name = known_exe["exe_name"]
-            exe_name_game_ids.setdefault(exe_name, set()).add(known_exe["game_id"])
-
-        running_game_ids = set()
-        for known_exe in known_exes:
-            full_path = known_exe["full_path"]
-            exe_name = known_exe["exe_name"]
-
-            if full_path and normalize_exe_path(full_path) in running_paths:
-                running_game_ids.add(known_exe["game_id"])
-            elif len(exe_name_game_ids.get(exe_name, set())) == 1 and exe_name in running_names:
-                running_game_ids.add(known_exe["game_id"])
-
-        return running_game_ids
-
-    def _tracking_loop(self, signals):
-        while not self.stop_event.is_set():
-            running_names, running_paths = get_running_processes()
-            try:
-                known_exes = self.db.get_known_executables()
-            except DatabaseError as e:
-                print(e)
-                self.stop_event.wait(10)
-                continue
-
-            running_game_ids = self._get_running_game_ids(running_names, running_paths, known_exes)
-
-            started_game_ids = []
-            stopped_sessions = []
-
-            with self.active_sessions_lock:
-                for game_id in running_game_ids:
-                    if game_id not in self.active_sessions:
-                        self.active_sessions[game_id] = datetime.now()
-                        started_game_ids.append(game_id)
-
-                for game_id in list(self.active_sessions.keys()):
-                    if game_id not in running_game_ids:
-                        stopped_sessions.append((game_id, self.active_sessions.pop(game_id), datetime.now()))
-
-            for game_id in started_game_ids:
-                try:
-                    game = self.db.get_game(game_id)
-                except DatabaseError as e:
-                    print(e)
-                    continue
-                if game is not None:
-                    print(f"Started tracking game {game.name}")
-                    signals.game_started.emit(game_id, game.name)
-
-            for game_id, start_time, end_time in stopped_sessions:
-                try:
-                    self.db.insert_session(game_id, start_time, end_time)
-                except DatabaseError as e:
-                    print(e)
-                    with self.active_sessions_lock:
-                        self.active_sessions.setdefault(game_id, start_time)
-                    continue
-
-                try:
-                    game = self.db.get_game(game_id)
-                except DatabaseError as e:
-                    print(e)
-                    continue
-
-                if game is not None:
-                    print(f"Ended tracking game {game.name}")
-                    signals.game_stopped.emit(game_id, game.name)
-
-            self.stop_event.wait(10)
-
     # signal handlers
     def _on_game_started(self, game_id, game_name):
         for row in range(self.model.rowCount()):
@@ -653,18 +559,11 @@ class MainWindow(QMainWindow):
                 self._show_database_error(str(e), add_game_dialog)
 
     def cleanup(self):
-        self.stop_event.set()
-        self.tracker_thread.join(timeout=12)
+        if self.cleanup_done:
+            return
+        self.cleanup_done = True
 
-        with self.active_sessions_lock:
-            active_sessions = list(self.active_sessions.items())
-            self.active_sessions.clear()
-
-        for game_id, start_time in active_sessions:
-            try:
-                self.db.insert_session(game_id, start_time, datetime.now())
-            except DatabaseError as e:
-                print(e)
+        self.tracker.stop()
 
         if self.current_game:
             with open(GAMETXT_PATH, "w") as f:
@@ -673,9 +572,9 @@ class MainWindow(QMainWindow):
     def _show_database_error(self, message, parent=None):
         dialog = QMessageBox(parent or self)
         dialog.setWindowTitle("Database error")
-        dialog.setIcon(QMessageBox.Warning)
+        dialog.setIcon(QMessageBox.Warning) # type: ignore
         dialog.setText(message)
-        dialog.setStandardButtons(QMessageBox.Ok)
+        dialog.setStandardButtons(QMessageBox.Ok) # type: ignore
         dialog.setStyleSheet("""
             QMessageBox {
                 background-color: #2C2D2C;
@@ -703,53 +602,3 @@ class MainWindow(QMainWindow):
         """)
         dialog.exec()
 
-class Application(QApplication):
-    def __init__(self):
-        super().__init__()
-        self._setup()
-
-    def _setup(self):
-        self.setQuitOnLastWindowClosed(False)
-        self.aboutToQuit.connect(self._on_about_to_quit)
-
-        self.win = MainWindow()
-
-        # icon shenanigans so it appears in the taskbar and tray properly. i have no idea why this is needed
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("recap.rebooted.1")
-        except Exception:
-            pass  # (older Windows or other OS)
-
-        icon = QIcon(str(ICON_PATH))
-        self.setWindowIcon(icon)
-        self.win.setWindowIcon(icon)
-
-        self.tray = QSystemTrayIcon()
-        self.tray.setIcon(icon)
-        self.tray.setVisible(True)
-        self.tray.activated.connect(self._tray_on_clicked)
-
-        self.menu = QMenu()
-        self.quit_action = QAction("quit")
-        self.quit_action.triggered.connect(self._on_quit)
-        self.menu.addAction(self.quit_action)
-
-        self.tray.setContextMenu(self.menu)
-        
-        #self.win.show()
-
-    # event on whatevers
-    def _on_about_to_quit(self):
-        self.win.cleanup()
-
-    def _on_quit(self):
-        self.quit()
-
-    def _tray_on_clicked(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            QTimer.singleShot(0, self.win._refresh_game_banner) # i want to remove this
-            QTimer.singleShot(10, lambda: self.win.resizeEvent(None)) # and this
-            self.win.show()
-            self.win.raise_()  # bring to front
-            self.win.activateWindow()  # focus it
