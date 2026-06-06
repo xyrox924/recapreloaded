@@ -43,10 +43,10 @@ class MainWindow(QMainWindow):
         self.tracker = GameTracker(self.db)
         self.tracker.game_started.connect(self._on_game_started)
         self.tracker.game_stopped.connect(self._on_game_stopped)
-        self.tracker.start()
 
         self._setup_ui()
         self._refresh_tree_view()
+        self.tracker.start()
 
         if is_in_startup(regkey_name):
             self.startup_btn.setIcon(self.win1_icon)
@@ -402,34 +402,34 @@ class MainWindow(QMainWindow):
                 self.root.appendRow(child)
 
     def _refresh_game_banner(self):
-        if self.current_game is not None and self.current_game.banner_path is not None:
-                if self.current_game_banner_pixmap is None or self.current_game_banner_pixmap.isNull():
-                    self.current_game_banner_pixmap = QPixmap(Path(BANNERS_PATH / self.current_game.banner_path))
-                    
-                if not self.current_game_banner_pixmap.isNull():
-                    scaled_pixmap = self.current_game_banner_pixmap.scaled(
-                        self.banner_label.size(),
-                        Qt.KeepAspectRatioByExpanding, # type: ignore
-                        Qt.SmoothTransformation # type: ignore
-                    )
-                    
-                    x = (scaled_pixmap.width() - self.banner_label.width()) // 2
-                    y = (scaled_pixmap.height() - self.banner_label.height()) // 2
-                    
-                    cropped_pixmap = scaled_pixmap.copy(
-                        x, y, 
-                        self.banner_label.width(), 
-                        self.banner_label.height()
-                    )
-                    
-                    self.banner_label.setPixmap(cropped_pixmap)
-                    
-                    # update blur transition with cropped pixmap AND set proportional height
-                    self.blur_transition.set_proportional_height(self.banner_label.height())
-                    self.blur_transition.set_banner_pixmap(cropped_pixmap)
-                else:
-                    self.banner_label.clear()
-                    self.blur_transition.set_banner_pixmap(None)
+        if self.current_game is not None and self.current_game.banner_path:
+            if self.current_game_banner_pixmap is None or self.current_game_banner_pixmap.isNull():
+                self.current_game_banner_pixmap = QPixmap(Path(BANNERS_PATH / self.current_game.banner_path))
+
+            if not self.current_game_banner_pixmap.isNull():
+                scaled_pixmap = self.current_game_banner_pixmap.scaled(
+                    self.banner_label.size(),
+                    Qt.KeepAspectRatioByExpanding, # type: ignore
+                    Qt.SmoothTransformation # type: ignore
+                )
+
+                x = (scaled_pixmap.width() - self.banner_label.width()) // 2
+                y = (scaled_pixmap.height() - self.banner_label.height()) // 2
+
+                cropped_pixmap = scaled_pixmap.copy(
+                    x, y,
+                    self.banner_label.width(),
+                    self.banner_label.height()
+                )
+
+                self.banner_label.setPixmap(cropped_pixmap)
+
+                # update blur transition with cropped pixmap AND set proportional height
+                self.blur_transition.set_proportional_height(self.banner_label.height())
+                self.blur_transition.set_banner_pixmap(cropped_pixmap)
+            else:
+                self.banner_label.clear()
+                self.blur_transition.set_banner_pixmap(None)
         else:
             self.banner_label.clear()
             self.blur_transition.set_banner_pixmap(None)

@@ -1,5 +1,3 @@
-import shutil
-
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -7,6 +5,7 @@ from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QScrollArea, QWidget, QLineEdit, QTextEdit, QFileDialog
 
 from recap_reloaded.database.models import Executable, Game
+from recap_reloaded.gui.banner_utils import copy_banner_to_storage
 from recap_reloaded.gui.executablelist import ExecutableListWidget
 
 from recap_reloaded.config import BANNERS_PATH
@@ -18,8 +17,8 @@ class SettingsDialog(QDialog):
 
         self.game = game
 
-        self.banner_path = ""
-        if game.banner_path is not None:
+        self.banner_path = None
+        if game.banner_path:
             self.banner_path = game.banner_path
             path = Path(BANNERS_PATH / game.banner_path)
             banner_btn_pixmap = QPixmap(path)
@@ -299,8 +298,7 @@ class SettingsDialog(QDialog):
         if file_path:
             temp = Path(file_path)
             try:
-                shutil.copy(str(temp), BANNERS_PATH)
-                self.banner_path = temp.name # get the filename with its extension not the full path
+                self.banner_path = copy_banner_to_storage(file_path)
 
                 # set button icon to the selected image
                 banner_btn_pixmap = QPixmap(temp)
@@ -313,7 +311,5 @@ class SettingsDialog(QDialog):
                     self.banner_btn.setIcon(QIcon(scaled_pixmap))
                     self.banner_btn.setIconSize(self.banner_btn.size())
                     self.banner_btn.setText("")  # remove the +
-            except shutil.SameFileError:
-                print("source and destination are the same file.")
-            except PermissionError:
-                print("permission denied.")
+            except OSError as e:
+                print(f"could not copy banner: {e}")
