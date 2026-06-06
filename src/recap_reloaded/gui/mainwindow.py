@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QSize, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap, QColor
-from PySide6.QtWidgets import QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QMessageBox
+from PySide6.QtWidgets import QMainWindow, QWidget, QTreeView, QSplitter, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle
 
 from recap_reloaded.utils import get_time_formatted
 from recap_reloaded.win_utils import add_to_startup, remove_from_startup, is_in_startup
@@ -26,6 +26,27 @@ from recap_reloaded.config import (
     regkey_name,
 )
 
+SWATCH_PIXMAP_ROLE = Qt.UserRole + 1 # type: ignore
+
+
+class GameTreeDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+
+        swatch = index.data(SWATCH_PIXMAP_ROLE)
+        if not isinstance(swatch, QPixmap) or swatch.isNull():
+            return
+
+        item_option = QStyleOptionViewItem(option)
+        self.initStyleOption(item_option, index)
+        decoration_rect = item_option.widget.style().subElementRect(
+            QStyle.SE_ItemViewItemDecoration, # type: ignore
+            item_option,
+            item_option.widget
+        )
+        painter.drawPixmap(decoration_rect, swatch)
+
+
 # container, layout, then widgets, then add widgets and layouts to the layout of the container
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -38,6 +59,7 @@ class MainWindow(QMainWindow):
 
         self.current_game = None
         self.current_game_banner_pixmap = None
+        self.game_swatch_cache = {}
         self.cleanup_done = False
 
         self.tracker = GameTracker(self.db)
@@ -126,7 +148,8 @@ class MainWindow(QMainWindow):
         self.tree = QTreeView()
         self.tree.setUniformRowHeights(True)
         self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(20)
+        self.tree.setIndentation(16)
+        self.tree.setItemDelegate(GameTreeDelegate(self.tree))
         self.tree.setStyleSheet("""
             QTreeView {
                 font-family: 'Raleway';
@@ -215,6 +238,7 @@ class MainWindow(QMainWindow):
         self.root = self.model.invisibleRootItem()
 
         self.tree.setModel(self.model)
+        self.tree.setIconSize(QSize(16, 16))
         self.tree.expandAll()
 
         self.proxy_model = QSortFilterProxyModel()
@@ -396,10 +420,42 @@ class MainWindow(QMainWindow):
         if games:
             for game in games:
                 child = QStandardItem(game[1])
+                swatch = self._get_game_swatch(game[2])
+                child.setIcon(QIcon(swatch))
+                child.setData(swatch, SWATCH_PIXMAP_ROLE) # type: ignore
                 child.setEditable(False)
                 # game id
                 child.setData(game[0], Qt.UserRole) # type: ignore
                 self.root.appendRow(child)
+
+    def _get_game_swatch(self, banner_path):
+        cache_key = banner_path or None
+        if cache_key not in self.game_swatch_cache:
+            self.game_swatch_cache[cache_key] = self._create_game_swatch_pixmap(banner_path)
+        return self.game_swatch_cache[cache_key]
+
+    def _create_game_swatch_pixmap(self, banner_path):
+        size = self.tree.iconSize().width()
+        placeholder = QPixmap(size, size)
+        placeholder.fill(QColor("#3C3C3C"))
+
+        if not banner_path:
+            return placeholder
+
+        pixmap = QPixmap(str(BANNERS_PATH / banner_path))
+        if pixmap.isNull():
+            return placeholder
+
+        scaled_pixmap = pixmap.scaled(
+            size,
+            size,
+            Qt.KeepAspectRatioByExpanding, # type: ignore
+            Qt.SmoothTransformation # type: ignore
+        )
+
+        x = max(0, (scaled_pixmap.width() - size) // 2)
+        y = max(0, (scaled_pixmap.height() - size) // 2)
+        return scaled_pixmap.copy(x, y, size, size)
 
     def _refresh_game_banner(self):
         if self.current_game is not None and self.current_game.banner_path:

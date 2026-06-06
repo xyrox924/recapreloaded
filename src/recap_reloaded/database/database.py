@@ -260,7 +260,7 @@ class Database:
             conn = self._connect()
             cur = conn.cursor()
 
-            cur.execute("SELECT id, name FROM games")
+            cur.execute("SELECT id, name, banner_file FROM games")
 
             return cur.fetchall()
 

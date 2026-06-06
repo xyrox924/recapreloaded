@@ -36,7 +36,7 @@ class ExecutableListWidget(QWidget):
     def get_executables(self):
         executables = []
         for i in range(self.entries_layout.count()):
-            entry = self.entries_layout.itemAt(i).widget()
+            entry = self.entries_layout.itemAt(i).widget() # type: ignore
             if isinstance(entry, ExecutableEntry) and entry.path_edit.text().strip():
                 executables.append(Executable(path=entry.path_edit.text().strip()))
         return executables
