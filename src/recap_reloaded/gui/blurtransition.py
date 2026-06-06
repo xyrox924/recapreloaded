@@ -71,25 +71,28 @@ class BlurTransition(QWidget):
         if self.blurred_pixmap and not self.blurred_pixmap.isNull():
             # only rescale if width or height changed
             if self.cached_scaled_pixmap is None or self.last_width != self.width() or self.last_height != self.height():
+                widget_width = max(1, self.width())
                 scaled_blur = self.blurred_pixmap.scaled(
-                    self.width(), 
+                    widget_width,
                     self.blurred_pixmap.height(),
-                    Qt.KeepAspectRatio, # type: ignore
+                    Qt.KeepAspectRatioByExpanding, # type: ignore
                     Qt.SmoothTransformation # type: ignore
                 )
                 
                 # extract the bottom portion (last N pixels)
                 extract_height = min(self.current_height, scaled_blur.height())
+                source_x = max(0, (scaled_blur.width() - widget_width) // 2)
                 source_y = scaled_blur.height() - extract_height
                 
                 bottom_portion = scaled_blur.copy(
-                    0, source_y,
-                    scaled_blur.width(), extract_height
+                    source_x, source_y,
+                    widget_width, extract_height
                 )
                 
                 # mirror on y axis and stretch a bit
                 self.cached_scaled_pixmap = bottom_portion.transformed(
-                    QTransform().scale(1, -1.3)
+                    QTransform().scale(1, -1.3),
+                    Qt.SmoothTransformation # type: ignore
                 )
                 self.last_width = self.width()
                 self.last_height = self.height()
